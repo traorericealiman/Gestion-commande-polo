@@ -71,5 +71,5 @@ Ensuite, sur GitHub, ouvrez la PR vers `main` et remplissez le modèle. La CI la
 
 - **Migrations** : si vous modifiez un `models.py`, lancez `python manage.py makemigrations` et commitez le fichier généré. Si deux personnes créent une migration en même temps, la deuxième à fusionner doit relancer `makemigrations --merge`.
 - **Contrat d'API** : si vous touchez un `serializers.py` ou une route, régénérez `docs/openapi.yaml` (`python manage.py spectacular --file docs/openapi.yaml`) et prévenez l'équipe front.
-- **Secrets** : jamais de mot de passe, de clé ou de `.env` dans un commit. Le dépôt est **public**.
+- **Secrets** : jamais de mot de passe, de clé ou de `.env` dans un commit. Même si le dépôt est privé, un secret commité reste dans tout l'historique.
 - **Tests** : toute règle métier ajoutée a son test. Utilisez les fabriques de `apps/commandes/tests/fabriques.py`.

@@ -1,4 +1,5 @@
-# Base PostgreSQL pour le développement local.
+# OPTIONNEL : base PostgreSQL pour ceux qui ne l'ont pas installée sur leur machine.
+# Dans ce cas, mettre le port 5433 dans DATABASE_URL (.env).
 # Lancer :  docker compose up -d
 # Arrêter : docker compose down        (les données sont conservées)
 # Effacer : docker compose down -v     (repart d'une base vide)

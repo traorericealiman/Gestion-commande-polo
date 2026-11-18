@@ -4,13 +4,13 @@ API Django de l'application de vente de polos de l'ESATIC.
 
 L'acheteur commande sans compte, paie hors du site par mobile money (Wave, Orange Money, MTN Money, Moov Money) et joint la capture de son dépôt. Une trésorière vérifie le paiement puis valide ou refuse la commande. Aucune commande n'est validée sans preuve de paiement vérifiée par un humain.
 
-**Stack** : Python 3.12+ · Django 6.1 · Django REST Framework · PostgreSQL 17 · JWT (simplejwt) · Swagger (drf-spectacular)
+**Stack** : Python 3.12+ · Django 6.1 · Django REST Framework · PostgreSQL 16+ · JWT (simplejwt) · Swagger (drf-spectacular)
 
 ---
 
 ## Démarrer en local (environ 5 minutes)
 
-Prérequis : Python 3.12 ou plus, Docker Desktop, Git.
+Prérequis : Python 3.12 ou plus, Git, et PostgreSQL 16 ou plus installé sur la machine (ou Docker, voir plus bas).
 
 ```bash
 # 1. Cloner le dépôt
@@ -28,8 +28,10 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 # puis remplacer SECRET_KEY dans .env (la commande pour en générer une est dans le fichier)
 
-# 4. Base PostgreSQL (dans Docker, sur le port 5433)
-docker compose up -d
+# 4. Base PostgreSQL : créer l'utilisateur et la base du projet (une seule fois)
+psql -U postgres -c "CREATE ROLE polo LOGIN PASSWORD 'polo_dev_password' CREATEDB;"
+psql -U postgres -c "CREATE DATABASE polo_esatic OWNER polo;"
+# (CREATEDB est nécessaire : les tests créent une base temporaire)
 
 # 5. Tables + données initiales (les 8 tarifs)
 python manage.py migrate
@@ -47,7 +49,11 @@ python manage.py runserver
 | http://localhost:8000/admin/ | Administration Django (tarifs, stocks, numéros de dépôt, comptes) |
 | http://localhost:8000/api/v1/sante/ | Vérifie que l'API et la base répondent |
 
-> **Projet dans OneDrive ?** OneDrive verrouille les fichiers pendant la synchronisation et casse l'environnement virtuel. Créez alors le `.venv` hors de OneDrive, par exemple `python -m venv C:\Users\<vous>\.venvs\polo-esatic`.
+> **`psql` introuvable sous Windows ?** Il se trouve dans `C:\Program Files\PostgreSQL\<version>\bin\psql.exe`. Vous pouvez aussi créer l'utilisateur et la base depuis pgAdmin.
+>
+> **Pas de PostgreSQL installé ?** Avec Docker Desktop, `docker compose up -d` lance une base déjà configurée sur le port **5433**. Remplacez alors `5432` par `5433` dans `DATABASE_URL` (fichier `.env`), et sautez l'étape 4.
+>
+> **Projet dans OneDrive, Google Drive ou Dropbox ?** La synchronisation peut verrouiller des fichiers et casser l'environnement virtuel. Mieux vaut cloner le projet dans un dossier non synchronisé.
 
 ### Commandes utiles
 

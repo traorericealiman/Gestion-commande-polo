@@ -4,6 +4,8 @@ API Django de l'application de vente de polos de l'ESATIC.
 
 L'acheteur commande sans compte, paie hors du site par mobile money (Wave, Orange Money, MTN Money, Moov Money) et joint la capture de son dépôt. Une trésorière vérifie le paiement puis valide ou refuse la commande. Aucune commande n'est validée sans preuve de paiement vérifiée par un humain.
 
+> 📋 **Ce qui est fait et ce qui reste à faire : [docs/ETAT_AVANCEMENT.md](docs/ETAT_AVANCEMENT.md)**
+
 **Stack** : Python 3.12+ · Django 6.1 · Django REST Framework · PostgreSQL 16+ · JWT (simplejwt) · Swagger (drf-spectacular)
 
 ---

@@ -1,0 +1,25 @@
+# Base PostgreSQL pour le développement local.
+# Lancer :  docker compose up -d
+# Arrêter : docker compose down        (les données sont conservées)
+# Effacer : docker compose down -v     (repart d'une base vide)
+services:
+  db:
+    image: postgres:17
+    container_name: polo_esatic_db
+    environment:
+      POSTGRES_DB: polo_esatic
+      POSTGRES_USER: polo
+      POSTGRES_PASSWORD: polo_dev_password
+    # Port 5433 côté machine : évite le conflit avec un PostgreSQL déjà installé sur 5432.
+    ports:
+      - "5433:5432"
+    volumes:
+      - polo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polo -d polo_esatic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  polo_pgdata:

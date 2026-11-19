@@ -51,6 +51,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Sert les fichiers statiques de /admin/ et /api/docs/ en production.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -116,6 +118,11 @@ USE_TZ = True
 # --------------------------------------------------------------------------
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    # Fichiers compressés (gzip / brotli) servis par WhiteNoise ; `collectstatic` au déploiement.
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
 
 # Les captures de paiement sont PRIVÉES : elles sont stockées hors de tout
 # dossier servi publiquement et ne sont accessibles que via une vue
@@ -217,6 +224,10 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+    # La sonde de surveillance de l'hébergeur appelle parfois en HTTP interne.
+    SECURE_REDIRECT_EXEMPT = [r"^api/v1/sante/$"]
+    # Préchargement HSTS volontairement non activé : difficile à annuler, à décider plus tard.
+    SILENCED_SYSTEM_CHECKS = ["security.W021"]
 
 # --------------------------------------------------------------------------
 # Journalisation : pas de données personnelles dans les logs

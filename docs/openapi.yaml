@@ -120,15 +120,11 @@ paths:
     post:
       operationId: v1_commandes_create
       description: |-
-        [À FAIRE] Enregistre une commande au statut EN_ATTENTE.
+        [FAIT] Enregistre une commande au statut EN_ATTENTE.
 
-        Étapes attendues (dans une transaction) :
-          1. refuser si les ventes sont fermées (VentesFermees) ;
-          2. vérifier quantité ≤ ParametresVente.quantite_max_par_ligne et taille non épuisée ;
-          3. calculer les prix avec catalogue.services.prix_unitaire (jamais depuis le client) ;
-          4. créer Commande, LigneCommande(s), Paiement, Capture (empreinte SHA-256) ;
-          5. générer le code de suivi (services.generer_code_suivi) ;
-          6. créer l'Evenement SOUMETTRE et envoyer l'accusé de réception.
+        Toute la logique est dans services.creer_commande : ventes ouvertes,
+        quantité maximum et stock par variante, prix calculés par le serveur,
+        capture (empreinte SHA-256), code de suivi, historique et accusé de réception.
       summary: Passer une commande
       tags:
       - Public
@@ -285,9 +281,9 @@ paths:
     get:
       operationId: v1_gestion_commandes_retrieve
       description: |-
-        [À FAIRE] Fiche complète d'une commande, avec alertes calculées :
+        [FAIT] Fiche complète d'une commande, avec alertes calculées :
         même empreinte de capture ou même référence de transaction sur une autre
-        commande, stock insuffisant.
+        commande, stock insuffisant. Logique dans services.fiche_commande.
       summary: Fiche d'une commande
       parameters:
       - in: path
@@ -308,10 +304,7 @@ paths:
           description: ''
     patch:
       operationId: v1_gestion_commandes_partial_update
-      description: |-
-        [À FAIRE] Fiche complète d'une commande, avec alertes calculées :
-        même empreinte de capture ou même référence de transaction sur une autre
-        commande, stock insuffisant.
+      description: Seul `note_interne` est modifié ; tout autre champ envoyé est ignoré.
       summary: Modifier la note interne
       parameters:
       - in: path
@@ -383,8 +376,10 @@ paths:
     get:
       operationId: v1_gestion_commandes_capture_retrieve
       description: |-
-        [À FAIRE] Renvoie le fichier de la capture actuelle (FileResponse),
-        uniquement aux gestionnaires. Journaliser l'accès.
+        [FAIT] Renvoie le fichier de la capture actuelle, uniquement aux gestionnaires.
+
+        Le fichier est servi par cette vue authentifiée, jamais par une URL
+        publique. Chaque consultation est journalisée (ids uniquement).
       summary: Télécharger la capture de paiement
       parameters:
       - in: path
@@ -399,6 +394,8 @@ paths:
       responses:
         '200':
           description: Fichier JPG, PNG ou PDF
+        '404':
+          description: Commande ou capture introuvable
   /api/v1/gestion/commandes/{id}/demander-complement/:
     post:
       operationId: gestion_commande_demander_complement
@@ -587,9 +584,8 @@ paths:
   /api/v1/gestion/commandes/export/:
     get:
       operationId: v1_gestion_commandes_export_retrieve
-      description: |-
-        [À FAIRE] Export CSV de la liste filtrée (mêmes filtres que la liste),
-        une ligne par polo commandé. Journaliser l'export.
+      description: Mêmes paramètres que la liste (`statut`, `search`, `ordering`...).
+        Séparateur `;`, encodage UTF-8 avec BOM (s'ouvre directement dans Excel).
       summary: Exporter les commandes (CSV)
       tags:
       - Gestion
@@ -597,11 +593,13 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          description: Fichier CSV
+          description: Fichier CSV, une ligne par polo
   /api/v1/gestion/tableau-de-bord/:
     get:
       operationId: v1_gestion_tableau_de_bord_retrieve
-      description: '[À FAIRE] Compteurs par statut, montants, stock par combinaison.'
+      description: |-
+        [FAIT] Compteurs par statut, montants, stock par combinaison.
+        Logique dans services.tableau_de_bord (agrégats SQL).
       summary: Tableau de bord
       tags:
       - Gestion
@@ -635,7 +633,7 @@ paths:
     post:
       operationId: v1_suivi_create
       description: |-
-        [À FAIRE] Renvoie l'état d'une commande à partir du code ET de l'email.
+        [FAIT] Renvoie l'état d'une commande à partir du code ET de l'email.
         Si le couple ne correspond pas : 404 avec un message générique.
       summary: Suivre ma commande
       tags:
@@ -668,7 +666,7 @@ paths:
     post:
       operationId: v1_suivi_capture_create
       description: |-
-        [À FAIRE] L'acheteur renvoie une capture quand sa commande est « À corriger ».
+        [FAIT] L'acheteur renvoie une capture quand sa commande est « À corriger ».
         Crée une nouvelle Capture puis appelle appliquer_transition(RENVOYER_CAPTURE).
       summary: Renvoyer une capture de paiement
       tags:
@@ -1314,6 +1312,7 @@ components:
       properties:
         note_interne:
           type: string
+          maxLength: 5000
     RenvoiCaptureRequest:
       type: object
       description: Corps de POST /api/v1/suivi/capture/ (multipart/form-data).

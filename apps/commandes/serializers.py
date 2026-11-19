@@ -251,7 +251,7 @@ class CommandeDetailSerializer(CommandeListeSerializer):
 
 
 class NoteInterneSerializer(serializers.Serializer):
-    note_interne = serializers.CharField(allow_blank=True)
+    note_interne = serializers.CharField(allow_blank=True, max_length=5000)
 
 
 class DecisionSerializer(serializers.Serializer):

@@ -1,12 +1,14 @@
 """Endpoints des commandes.
 
-Statut de chaque endpoint :
-  [FAIT]       codé et testé
-  [À FAIRE]    contrat (entrée / sortie) défini, renvoie 501 pour l'instant.
-               Le front peut déjà s'appuyer sur la forme décrite dans /api/docs/.
+Tous les endpoints sont codés et testés ([FAIT]). Les vues restent minces :
+la logique métier est dans services.py.
 """
 
+import logging
+
 from django.db.models import Case, IntegerField, Value, When
+from django.http import FileResponse, HttpResponse
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -14,7 +16,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.exceptions import NonImplemente
 from apps.core.permissions import EstTresoriereOuAdmin
 
 from . import serializers as s
@@ -22,12 +23,19 @@ from .filters import CommandeFilter
 from .models import Commande
 from .services import (
     appliquer_transition,
+    capture_actuelle_ou_404,
     creer_commande,
     donnees_suivi,
+    ecrire_export_csv,
+    fiche_commande,
+    modifier_note_interne,
     renvoyer_capture,
+    tableau_de_bord,
     trouver_commande_acheteur,
 )
 from .statuts import Action, Statut
+
+logger = logging.getLogger(__name__)
 
 # ==========================================================================
 # PUBLIC
@@ -113,15 +121,11 @@ class RenvoiCaptureView(APIView):
 # ==========================================================================
 
 
-class CommandeListeView(generics.ListAPIView):
-    """[FAIT] Liste paginée, filtrable et cherchable.
-
-    Tri par défaut : commandes en attente d'abord, puis les autres ; dans
-    chaque groupe, de la plus ancienne à la plus récente. `?ordering=` le remplace.
-    """
+class CommandesGestionMixin:
+    """Queryset, filtres, recherche et tri communs à la liste et à l'export :
+    le fichier exporté correspond exactement à ce que la trésorière voit."""
 
     permission_classes = [EstTresoriereOuAdmin]
-    serializer_class = s.CommandeListeSerializer
     filterset_class = CommandeFilter
     search_fields = [
         "code_suivi",
@@ -147,45 +151,73 @@ class CommandeListeView(generics.ListAPIView):
             .order_by("priorite", "date_creation")
         )
 
+
+class CommandeListeView(CommandesGestionMixin, generics.ListAPIView):
+    """[FAIT] Liste paginée, filtrable et cherchable.
+
+    Tri par défaut : commandes en attente d'abord, puis les autres ; dans
+    chaque groupe, de la plus ancienne à la plus récente. `?ordering=` le remplace.
+    """
+
+    serializer_class = s.CommandeListeSerializer
+
     @extend_schema(tags=["Gestion"], summary="Lister les commandes")
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
 
 class CommandeDetailView(APIView):
-    """[À FAIRE] Fiche complète d'une commande, avec alertes calculées :
+    """[FAIT] Fiche complète d'une commande, avec alertes calculées :
     même empreinte de capture ou même référence de transaction sur une autre
-    commande, stock insuffisant."""
+    commande, stock insuffisant. Logique dans services.fiche_commande."""
 
     permission_classes = [EstTresoriereOuAdmin]
 
     @extend_schema(tags=["Gestion"], summary="Fiche d'une commande", responses=s.CommandeDetailSerializer)
     def get(self, request, pk):
-        raise NonImplemente()
+        return Response(s.CommandeDetailSerializer(fiche_commande(pk, request.user)).data)
 
     @extend_schema(
         tags=["Gestion"],
         summary="Modifier la note interne",
+        description="Seul `note_interne` est modifié ; tout autre champ envoyé est ignoré.",
         request=s.NoteInterneSerializer,
         responses=s.CommandeDetailSerializer,
     )
     def patch(self, request, pk):
-        raise NonImplemente()
+        entree = s.NoteInterneSerializer(data=request.data)
+        entree.is_valid(raise_exception=True)
+        modifier_note_interne(pk, entree.validated_data["note_interne"])
+        return Response(s.CommandeDetailSerializer(fiche_commande(pk, request.user)).data)
 
 
 class CaptureTelechargementView(APIView):
-    """[À FAIRE] Renvoie le fichier de la capture actuelle (FileResponse),
-    uniquement aux gestionnaires. Journaliser l'accès."""
+    """[FAIT] Renvoie le fichier de la capture actuelle, uniquement aux gestionnaires.
+
+    Le fichier est servi par cette vue authentifiée, jamais par une URL
+    publique. Chaque consultation est journalisée (ids uniquement).
+    """
 
     permission_classes = [EstTresoriereOuAdmin]
 
     @extend_schema(
         tags=["Gestion"],
         summary="Télécharger la capture de paiement",
-        responses={(200, "application/octet-stream"): OpenApiResponse(description="Fichier JPG, PNG ou PDF")},
+        responses={
+            (200, "application/octet-stream"): OpenApiResponse(description="Fichier JPG, PNG ou PDF"),
+            404: OpenApiResponse(description="Commande ou capture introuvable"),
+        },
     )
     def get(self, request, pk):
-        raise NonImplemente()
+        capture = capture_actuelle_ou_404(pk)
+        logger.info("Capture consultée : commande %s par utilisateur %s", pk, request.user.pk)
+        extension = capture.fichier.name.rsplit(".", 1)[-1]
+        commande = capture.commande
+        return FileResponse(
+            capture.fichier.open("rb"),
+            content_type=capture.type_mime,
+            filename=f"capture-{commande.code_suivi or commande.pk}.{extension}",
+        )
 
 
 class ActionCommandeView(APIView):
@@ -259,25 +291,36 @@ vue_annuler_decision = _vue_action(
 
 
 class TableauDeBordView(APIView):
-    """[À FAIRE] Compteurs par statut, montants, stock par combinaison."""
+    """[FAIT] Compteurs par statut, montants, stock par combinaison.
+    Logique dans services.tableau_de_bord (agrégats SQL)."""
 
     permission_classes = [EstTresoriereOuAdmin]
 
     @extend_schema(tags=["Gestion"], summary="Tableau de bord", responses=s.TableauDeBordSerializer)
     def get(self, request):
-        raise NonImplemente()
+        return Response(s.TableauDeBordSerializer(tableau_de_bord()).data)
 
 
-class ExportView(APIView):
-    """[À FAIRE] Export CSV de la liste filtrée (mêmes filtres que la liste),
-    une ligne par polo commandé. Journaliser l'export."""
+class ExportView(CommandesGestionMixin, generics.GenericAPIView):
+    """[FAIT] Export CSV de la liste filtrée (mêmes filtres, recherche et tri
+    que la liste), une ligne par polo commandé. Export journalisé (ids uniquement)."""
 
-    permission_classes = [EstTresoriereOuAdmin]
+    pagination_class = None
 
     @extend_schema(
         tags=["Gestion"],
         summary="Exporter les commandes (CSV)",
-        responses={(200, "text/csv"): OpenApiResponse(description="Fichier CSV")},
+        description="Mêmes paramètres que la liste (`statut`, `search`, `ordering`...). "
+        "Séparateur `;`, encodage UTF-8 avec BOM (s'ouvre directement dans Excel).",
+        responses={(200, "text/csv"): OpenApiResponse(description="Fichier CSV, une ligne par polo")},
     )
     def get(self, request):
-        raise NonImplemente()
+        commandes = self.filter_queryset(self.get_queryset())
+        nom = f"commandes-{timezone.localtime():%Y%m%d-%H%M}.csv"
+        reponse = HttpResponse(
+            content_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{nom}"'},
+        )
+        nombre = ecrire_export_csv(commandes, reponse)
+        logger.info("Export CSV : %s ligne(s) par utilisateur %s", nombre, request.user.pk)
+        return reponse

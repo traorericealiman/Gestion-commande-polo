@@ -4,6 +4,7 @@ Les vues restent minces : elles valident l'entrée (serializers) puis
 appellent les fonctions de ce module.
 """
 
+import csv
 import logging
 import re
 import time
@@ -15,19 +16,23 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Count, Prefetch, Q, Sum
+from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
 from rest_framework import status
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 
-from apps.catalogue.models import ParametresVente
+from apps.catalogue.choices import Manches, Modele, Taille, Version
+from apps.catalogue.models import ParametresVente, Stock
 from apps.catalogue.services import VarianteInconnue, prix_unitaire, quantite_restante
 from apps.core.exceptions import TransitionInterdite, VentesFermees
 from apps.core.validators import detecter_type, empreinte_sha256
 
 from .models import Capture, Commande, Evenement, LigneCommande, Paiement
-from .statuts import TRANSITIONS, Acteur, Action, Statut
+from .statuts import STATUTS_CONSOMMANT_STOCK, TRANSITIONS, Acteur, Action, Statut, actions_possibles
 
 logger = logging.getLogger(__name__)
 
@@ -208,13 +213,26 @@ def _verifier_acteur(transition, auteur):
             raise PermissionDenied("Action réservée à l'administrateur.")
 
 
-def _verifier_stock(commande: Commande):
-    """RG10 : on bloque la validation si une ligne dépasse le stock restant."""
-    manquants = []
+def variantes_en_manque(commande: Commande) -> list[str]:
+    """Variantes de la commande dont la quantité dépasse le stock restant.
+
+    Les lignes identiques sont additionnées (deux lignes de 3 polos M = 6),
+    comme à la création de la commande.
+    """
+    totaux: dict[tuple, int] = defaultdict(int)
     for ligne in commande.lignes.all():
-        restant = quantite_restante(ligne.modele, ligne.version, ligne.manches, ligne.taille)
-        if restant is not None and ligne.quantite > restant:
-            manquants.append(str(ligne))
+        totaux[(ligne.modele, ligne.version, ligne.manches, ligne.taille)] += ligne.quantite
+    manquants = []
+    for (modele, version, manches, taille), quantite in totaux.items():
+        restant = quantite_restante(modele, version, manches, taille)
+        if restant is not None and quantite > restant:
+            manquants.append(f"{quantite} × {modele} {version} {manches} {taille} (reste {restant})")
+    return manquants
+
+
+def _verifier_stock(commande: Commande):
+    """RG10 : on bloque la validation si une variante dépasse le stock restant."""
+    manquants = variantes_en_manque(commande)
     if manquants:
         raise StockInsuffisant("Stock insuffisant pour : " + ", ".join(manquants) + ".")
 
@@ -291,7 +309,6 @@ def appliquer_transition(
 # Action qui vient d'avoir lieu -> (gabarit dans templates/emails/, objet de l'email).
 # Le statut seul ne suffit pas : EN_ATTENTE peut venir d'une création, d'un
 # renvoi de capture ou d'une annulation de décision.
-# ANNULER_DECISION n'envoie volontairement aucun email (décision interne).
 EMAILS = {
     Action.SOUMETTRE: ("accuse_reception", "Commande reçue"),
     Action.RENVOYER_CAPTURE: ("capture_recue", "Nouvelle capture reçue"),
@@ -301,6 +318,7 @@ EMAILS = {
     Action.MARQUER_REMIS: ("polos_remis", "Polos remis"),
     Action.REFUSER: ("commande_refusee", "Commande refusée"),
     Action.CLOTURER: ("commande_cloturee", "Commande clôturée"),
+    Action.ANNULER_DECISION: ("decision_annulee", "Votre commande repasse en vérification"),
 }
 ESSAIS_EMAIL = 3
 
@@ -395,3 +413,270 @@ def notifier_changement_statut(commande_id: int, action: str | None = None) -> N
                 )
             else:
                 time.sleep(essai)
+
+
+# ==========================================================================
+# Gestion (trésorières / administrateur)
+# ==========================================================================
+
+
+def capture_actuelle_ou_404(commande_id: int) -> Capture:
+    """Capture qui fait foi pour une commande (la plus récente).
+
+    404 si la commande n'existe pas, si elle n'a aucune capture ou si le
+    fichier a disparu du disque (ce dernier cas est journalisé : c'est anormal).
+    """
+    commande = get_object_or_404(Commande, pk=commande_id)
+    capture = commande.captures.order_by("-date_envoi", "-pk").first()
+    if capture is None:
+        raise NotFound("Aucune capture pour cette commande.")
+    if not capture.fichier.storage.exists(capture.fichier.name):
+        logger.error("Fichier de capture introuvable sur le disque (capture id=%s)", capture.pk)
+        raise NotFound("Le fichier de la capture est introuvable.")
+    return capture
+
+
+def _codes_suivi(queryset) -> list[str]:
+    return list(queryset.order_by("date_creation", "pk").values_list("code_suivi", flat=True))
+
+
+def calculer_alertes(commande: Commande, capture: Capture | None) -> list[dict]:
+    """Signaux à vérifier par la trésorière (ils ne bloquent rien) :
+
+    - CAPTURE_DEJA_UTILISEE : même fichier (empreinte SHA-256) sur une autre commande ;
+    - REFERENCE_DEJA_UTILISEE : même référence de transaction sur une autre commande ;
+    - STOCK_INSUFFISANT : commande en attente qu'on ne pourrait pas valider faute de stock.
+    """
+    alertes = []
+    autres = Commande.objects.exclude(pk=commande.pk)
+
+    if capture is not None:
+        codes = _codes_suivi(autres.filter(captures__empreinte=capture.empreinte).distinct())
+        if codes:
+            alertes.append(
+                {
+                    "code": "CAPTURE_DEJA_UTILISEE",
+                    "message": "Cette capture de paiement a déjà été envoyée pour une autre commande.",
+                    "commandes_liees": codes,
+                }
+            )
+
+    reference = commande.paiement.reference_transaction.strip()
+    if reference:
+        codes = _codes_suivi(autres.filter(paiement__reference_transaction=reference))
+        if codes:
+            alertes.append(
+                {
+                    "code": "REFERENCE_DEJA_UTILISEE",
+                    "message": "Cette référence de transaction figure déjà sur une autre commande.",
+                    "commandes_liees": codes,
+                }
+            )
+
+    if commande.statut == Statut.EN_ATTENTE:
+        manquants = variantes_en_manque(commande)
+        if manquants:
+            alertes.append(
+                {
+                    "code": "STOCK_INSUFFISANT",
+                    "message": "Stock insuffisant pour : " + ", ".join(manquants) + ".",
+                    "commandes_liees": [],
+                }
+            )
+    return alertes
+
+
+def fiche_commande(commande_id: int, utilisateur) -> Commande:
+    """Commande prête pour CommandeDetailSerializer : relations chargées en
+    quelques requêtes groupées, plus les champs calculés (capture, alertes...)."""
+    commande = get_object_or_404(
+        Commande.objects.select_related("paiement").prefetch_related(
+            "lignes",
+            Prefetch("captures", queryset=Capture.objects.order_by("-date_envoi", "-pk")),
+            Prefetch(
+                "evenements", queryset=Evenement.objects.select_related("auteur").order_by("date", "pk")
+            ),
+        ),
+        pk=commande_id,
+    )
+
+    captures = list(commande.captures.all())
+    capture = captures[0] if captures else None
+    if capture is not None:
+        capture.url_telechargement = reverse("gestion-capture", args=[commande.pk])
+    commande.capture = capture
+    commande.alertes = calculer_alertes(commande, capture)
+    commande.autres_commandes_meme_email = _codes_suivi(
+        Commande.objects.filter(email__iexact=commande.email).exclude(pk=commande.pk)
+    )
+    actions = actions_possibles(commande.statut)
+    if not utilisateur.est_admin:
+        actions = [action for action in actions if action != Action.ANNULER_DECISION]
+    commande.actions_possibles = actions
+    return commande
+
+
+def modifier_note_interne(commande_id: int, note: str) -> None:
+    """Ne modifie QUE la note interne (jamais le statut ni les autres champs)."""
+    commande = get_object_or_404(Commande, pk=commande_id)
+    commande.note_interne = note
+    commande.save(update_fields=["note_interne", "date_modification"])
+
+
+VARIANTE = ("modele", "version", "manches", "taille")
+
+
+def _ordre_variante(variante: tuple) -> tuple:
+    """Ordre du catalogue (Licence avant Master, S avant M avant L...), pas l'ordre alphabétique."""
+    modele, version, manches, taille = variante
+    return (
+        Modele.values.index(modele),
+        Version.values.index(version),
+        Manches.values.index(manches),
+        Taille.values.index(taille),
+    )
+
+
+def tableau_de_bord() -> dict:
+    """Chiffres du tableau de bord, en 4 requêtes quel que soit le volume (agrégats SQL)."""
+    compteurs = dict.fromkeys(Statut.values, 0)
+    for ligne in Commande.objects.order_by().values("statut").annotate(nombre=Count("id")):
+        compteurs[ligne["statut"]] = ligne["nombre"]
+
+    montants = Commande.objects.aggregate(
+        encaisse=Sum("montant_total", filter=Q(statut__in=STATUTS_CONSOMMANT_STOCK)),
+        en_attente=Sum("montant_total", filter=Q(statut=Statut.EN_ATTENTE)),
+    )
+
+    quantites = {
+        tuple(ligne[champ] for champ in VARIANTE): ligne
+        for ligne in LigneCommande.objects.order_by()
+        .values(*VARIANTE)
+        .annotate(
+            demande=Sum("quantite", filter=~Q(commande__statut__in=[Statut.REFUSEE, Statut.CLOTUREE])),
+            valide=Sum("quantite", filter=Q(commande__statut__in=STATUTS_CONSOMMANT_STOCK)),
+            remis=Sum("quantite", filter=Q(commande__statut=Statut.REMIS)),
+        )
+    }
+    maximums = {
+        tuple(stock[champ] for champ in VARIANTE): stock["quantite_max"]
+        for stock in Stock.objects.values(*VARIANTE, "quantite_max")
+    }
+
+    stocks = []
+    for variante in sorted(quantites.keys() | maximums.keys(), key=_ordre_variante):
+        chiffres = quantites.get(variante, {})
+        valide = chiffres.get("valide") or 0
+        maximum = maximums.get(variante)
+        stocks.append(
+            {
+                **dict(zip(VARIANTE, variante, strict=True)),
+                "demande": chiffres.get("demande") or 0,
+                "valide": valide,
+                "remis": chiffres.get("remis") or 0,
+                # Même règle que catalogue.services.quantite_restante.
+                "restant": None if maximum is None else max(maximum - valide, 0),
+            }
+        )
+
+    return {
+        "compteurs": compteurs,
+        "montant_encaisse": montants["encaisse"] or 0,
+        "montant_en_attente": montants["en_attente"] or 0,
+        "stocks": stocks,
+    }
+
+
+COLONNES_EXPORT = [
+    "Code de suivi",
+    "Nom",
+    "Prénoms",
+    "Email",
+    "Modèle",
+    "Version",
+    "Manches",
+    "Taille",
+    "Quantité",
+    "Prix unitaire (FCFA)",
+    "Prix de la ligne (FCFA)",
+    "Montant total de la commande (FCFA)",
+    "Moyen de paiement",
+    "Numéro d'envoi",
+    "Référence de transaction",
+    "Statut",
+    "Date de la commande",
+]
+
+
+def _cellule_sure(valeur: str) -> str:
+    """Neutralise l'injection de formule : Excel exécute une cellule qui
+    commence par = + - @ (un acheteur pourrait saisir « =HYPERLINK(...) »)."""
+    if valeur and valeur[0] in "=+-@\t\r":
+        return "'" + valeur
+    return valeur
+
+
+def ecrire_export_csv(commandes, sortie) -> int:
+    """Écrit une ligne par polo commandé dans `sortie` ; renvoie le nombre de lignes.
+
+    `commandes` doit déjà être filtré, avec paiement et lignes préchargés.
+    Séparateur « ; » et BOM UTF-8 : le fichier s'ouvre directement dans Excel en français.
+    """
+    sortie.write("\ufeff")
+    ecrivain = csv.writer(sortie, delimiter=";")
+    ecrivain.writerow(COLONNES_EXPORT)
+    nombre = 0
+    for commande in commandes:
+        paiement = commande.paiement
+        for ligne in commande.lignes.all():
+            ecrivain.writerow(
+                [
+                    commande.code_suivi,
+                    _cellule_sure(commande.nom),
+                    _cellule_sure(commande.prenoms),
+                    _cellule_sure(commande.email),
+                    ligne.get_modele_display(),
+                    ligne.get_version_display(),
+                    ligne.get_manches_display(),
+                    ligne.taille,
+                    ligne.quantite,
+                    ligne.prix_unitaire,
+                    ligne.prix_ligne,
+                    commande.montant_total,
+                    paiement.get_moyen_display(),
+                    paiement.numero_envoi,  # validé : chiffres et + uniquement
+                    _cellule_sure(paiement.reference_transaction),
+                    commande.get_statut_display(),
+                    timezone.localtime(commande.date_creation).strftime("%d/%m/%Y %H:%M"),
+                ]
+            )
+            nombre += 1
+    return nombre
+
+
+def cloturer_commandes_expirees(maintenant=None) -> tuple[int, int]:
+    """Clôture les commandes « À corriger » restées sans réponse après le délai
+    (ParametresVente.delai_correction_jours, 7 jours par défaut).
+
+    Chaque commande est traitée dans sa propre transaction (appliquer_transition) :
+    une erreur sur l'une n'empêche pas de clôturer les autres. L'email de
+    clôture part via appliquer_transition. Renvoie (clôturées, erreurs).
+    """
+    delai = timedelta(days=ParametresVente.charger().delai_correction_jours)
+    limite = (maintenant or timezone.now()) - delai
+    identifiants = list(
+        Commande.objects.filter(statut=Statut.A_CORRIGER, date_decision__lte=limite)
+        .order_by("date_decision")
+        .values_list("pk", flat=True)
+    )
+    cloturees = erreurs = 0
+    for identifiant in identifiants:
+        try:
+            appliquer_transition(Commande(pk=identifiant), Action.CLOTURER)
+            cloturees += 1
+        except Exception as exc:
+            erreurs += 1
+            logger.error("Clôture impossible (commande id=%s, %s)", identifiant, type(exc).__name__)
+    if cloturees or erreurs:
+        logger.info("Clôture automatique : %s commande(s) clôturée(s), %s erreur(s)", cloturees, erreurs)
+    return cloturees, erreurs

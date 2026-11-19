@@ -1,6 +1,6 @@
 # État d'avancement du back-end
 
-> Dernière mise à jour : **18 novembre 2026**
+> Dernière mise à jour : **19 novembre 2026**
 > À lire avant de prendre une tâche. Mettez ce fichier à jour dans votre Pull Request quand vous terminez quelque chose.
 
 Ce document dit **ce qui est déjà fait**, **ce qui reste à faire** et, pour chaque chantier restant, **comment le faire** : fichiers à toucher, règles à respecter, pièges connus. Il ne dit pas *qui* fait quoi : la répartition est gérée à part.
@@ -23,15 +23,15 @@ Pour installer le projet, lisez le [README](../README.md). Pour les branches, co
 | Passer une commande | ✅ Fait et testé |
 | Suivi de commande | ✅ Fait et testé |
 | Renvoi de capture | ✅ Fait et testé |
-| Fiche d'une commande (avec alertes) + note interne | 🚧 À faire |
-| Téléchargement de la capture | 🚧 À faire |
-| Tableau de bord | 🚧 À faire |
-| Export CSV | 🚧 À faire |
+| Fiche d'une commande (avec alertes) + note interne | ✅ Fait et testé |
+| Téléchargement de la capture | ✅ Fait et testé |
+| Tableau de bord | ✅ Fait et testé |
+| Export CSV | ✅ Fait et testé |
 | Emails automatiques | ✅ Fait et testé (texte + HTML) |
-| Clôture automatique après 7 jours | 🚧 À faire |
-| Mise en production | 🚧 À faire |
+| Clôture automatique après 7 jours | ✅ Fait et testé |
+| Mise en production | 🟡 Prête ([DEPLOIEMENT.md](DEPLOIEMENT.md)) : reste à choisir l'hébergeur |
 
-Les endpoints « À faire » **existent déjà** : leur route, leur format d'entrée et leur format de sortie sont définis et visibles dans Swagger. Pour l'instant ils répondent `501 Non implémenté`. **Le front peut donc déjà coder contre eux.** Votre travail consiste à remplacer le `raise NonImplemente()` par la vraie logique, **sans changer le format** (sinon, prévenir le front).
+**Plus aucun endpoint ne renvoie `501`.** Tout le contrat d'API visible dans Swagger est codé et testé.
 
 ---
 
@@ -91,7 +91,16 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
 | `POST commandes/` | Passer une commande : ventes ouvertes, quantité max et stock par variante (lignes identiques additionnées), prix calculés par le serveur, capture avec empreinte, code de suivi, historique `SOUMETTRE`, accusé de réception via `on_commit`. Logique dans `services.creer_commande` ; `services.enregistrer_capture` est réutilisable pour le renvoi de capture. |
 | `POST suivi/` | Suivre sa commande avec le code **et** l'email (casse et espaces ignorés). 404 générique identique si l'un des deux est faux. `retrait` rempli seulement au statut `POLO_DISPONIBLE`. Logique dans `services.trouver_commande_acheteur` et `services.donnees_suivi`, réutilisables pour le renvoi de capture. |
 | `POST suivi/capture/` | Renvoyer une capture quand la commande est `A_CORRIGER` (409 sinon, 404 générique si code ou email faux). Nouvelle `Capture`, l'ancienne est conservée ; référence de transaction mise à jour si fournie ; retour à `EN_ATTENTE` via `appliquer_transition` (historique + email). Logique dans `services.renvoyer_capture`. |
+| `GET gestion/commandes/{id}/` | Fiche complète : lignes, paiement, capture actuelle, historique, autres commandes du même email, actions possibles (`ANNULER_DECISION` seulement pour l'admin). 3 alertes non bloquantes : `CAPTURE_DEJA_UTILISEE` (même empreinte sur une autre commande), `REFERENCE_DEJA_UTILISEE`, `STOCK_INSUFFISANT` (commande en attente). Nombre de requêtes constant. Logique dans `services.fiche_commande` et `services.calculer_alertes`. |
+| `PATCH gestion/commandes/{id}/` | Ne modifie **que** `note_interne` (5000 caractères max), renvoie la fiche. |
+| `GET gestion/commandes/{id}/capture/` | Fichier de la capture actuelle (`FileResponse`), réservé aux gestionnaires ; 404 si aucune capture ou fichier disparu ; accès journalisé (ids uniquement). |
+| `GET gestion/tableau-de-bord/` | Compteurs par statut, montant encaissé (validées, disponibles, remises), montant en attente, stock par combinaison (demandé, validé, remis, restant). Agrégats SQL, nombre de requêtes constant. Logique dans `services.tableau_de_bord`. |
+| `GET gestion/commandes/export/` | CSV, une ligne par polo. **Mêmes filtres, recherche et tri que la liste** (`CommandesGestionMixin` partagé). Séparateur `;` + BOM UTF-8 pour Excel, injection de formule neutralisée, export journalisé. |
 | `GET sante/` | État de l'API et de la base |
+
+**Clôture automatique** : `python manage.py cloturer_commandes` clôture les commandes `A_CORRIGER` dont la décision a plus de `delai_correction_jours` (7 par défaut), via `appliquer_transition` (historique + email). Une erreur sur une commande n'arrête pas les autres. À planifier une fois par jour (voir [DEPLOIEMENT.md](DEPLOIEMENT.md)).
+
+**Contrôle de stock** : `services.variantes_en_manque` additionne les lignes identiques (deux lignes de 3 polos M = 6), pour la validation comme pour l'alerte de la fiche, comme à la création de commande.
 
 ### 2.5 Sécurité déjà en place
 - Les droits sont vérifiés côté serveur ([apps/core/permissions.py](../apps/core/permissions.py)). Par défaut **tout endpoint exige une connexion** : un endpoint public doit déclarer `AllowAny`.
@@ -101,7 +110,7 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
 - En production (`DEBUG=False`) : HTTPS forcé, cookies sécurisés, HSTS.
 
 ### 2.6 Tests
-73 tests, tous verts. Ils couvrent les transitions, les rôles, le stock, l'API (connexion, liste, actions, erreurs), la validation des captures, la création de commande (`tests/test_creation.py`), le suivi (`tests/test_suivi.py`), le renvoi de capture (`tests/test_renvoi_capture.py`) et les emails (`tests/test_emails.py`). Les fabriques réutilisables sont dans [apps/commandes/tests/fabriques.py](../apps/commandes/tests/fabriques.py) : `creer_commande()`, `creer_tresoriere()`, `creer_admin()`, `fichier_png()`.
+120 tests, tous verts. Ils couvrent les transitions, les rôles, le stock, l'API (connexion, liste, actions, erreurs), la validation des captures, la création de commande (`tests/test_creation.py`), le suivi (`tests/test_suivi.py`), le renvoi de capture (`tests/test_renvoi_capture.py`) et les emails (`tests/test_emails.py`), le téléchargement de la capture (`tests/test_capture.py`), la fiche (`tests/test_fiche.py`), le tableau de bord (`tests/test_tableau_de_bord.py`), l'export (`tests/test_export.py`) et la clôture automatique (`tests/test_cloture.py`). Les fabriques réutilisables sont dans [apps/commandes/tests/fabriques.py](../apps/commandes/tests/fabriques.py) : `creer_commande()`, `creer_tresoriere()`, `creer_admin()`, `fichier_png()`. `tests/stockage.py` (`StockageTemporaireMixin`) écrit les captures de test dans un dossier temporaire.
 
 ---
 
@@ -154,7 +163,7 @@ Chaque chantier indique les fichiers concernés, les étapes et le **critère de
 
 **Fini quand** : renvoi accepté au statut `A_CORRIGER`, 409 sinon ; l'ancienne capture est conservée.
 
-### Chantier 4 · `GET` et `PATCH /api/v1/gestion/commandes/{id}/` : fiche d'une commande
+### Chantier 4 · `GET` et `PATCH /api/v1/gestion/commandes/{id}/` : fiche d'une commande ✅ Fait
 **Fichier** : `CommandeDetailView`. **Sortie** : `CommandeDetailSerializer`.
 - Charger la commande avec `select_related("paiement")` et `prefetch_related("lignes", "captures", "evenements__auteur")`, pour éviter des dizaines de requêtes.
 - `capture` : informations de `commande.capture_actuelle` + `url_telechargement` = `/api/v1/gestion/commandes/{id}/capture/`. Le modèle n'a pas ce champ : il faut le construire, par exemple avec un `SerializerMethodField` ou un dict.
@@ -168,7 +177,7 @@ Chaque chantier indique les fichiers concernés, les étapes et le **critère de
 
 **Fini quand** : les 3 alertes sont testées ; une trésorière ne voit pas `ANNULER_DECISION`.
 
-### Chantier 5 · `GET /api/v1/gestion/commandes/{id}/capture/` : télécharger la capture
+### Chantier 5 · `GET /api/v1/gestion/commandes/{id}/capture/` : télécharger la capture ✅ Fait
 **Fichier** : `CaptureTelechargementView`.
 - `capture = commande.capture_actuelle` ; s'il n'y en a pas → 404.
 - Renvoyer `FileResponse(capture.fichier.open("rb"), content_type=capture.type_mime)`. `capture.fichier.url` **ne fonctionne pas** volontairement, car le stockage est privé.
@@ -176,7 +185,7 @@ Chaque chantier indique les fichiers concernés, les étapes et le **critère de
 
 **Fini quand** : une trésorière connectée reçoit le fichier, un visiteur non connecté reçoit 401.
 
-### Chantier 6 · `GET /api/v1/gestion/tableau-de-bord/` : tableau de bord
+### Chantier 6 · `GET /api/v1/gestion/tableau-de-bord/` : tableau de bord ✅ Fait
 **Fichier** : `TableauDeBordView`. **Sortie** : `TableauDeBordSerializer`.
 - `compteurs` : nombre de commandes par statut. Une seule requête : `values("statut").annotate(n=Count("id"))`. Mettre 0 pour les statuts absents.
 - `montant_encaisse` : somme de `montant_total` des statuts de `STATUTS_CONSOMMANT_STOCK`.
@@ -191,7 +200,7 @@ Chaque chantier indique les fichiers concernés, les étapes et le **critère de
 
 **Fini quand** : les chiffres sont justes sur un jeu de test avec des commandes dans plusieurs statuts.
 
-### Chantier 7 · `GET /api/v1/gestion/commandes/export/` : export CSV
+### Chantier 7 · `GET /api/v1/gestion/commandes/export/` : export CSV ✅ Fait
 **Fichier** : `ExportView`.
 - Réutiliser **les mêmes filtres et la même recherche** que la liste : appliquer `CommandeFilter` et `SearchFilter` sur le même queryset, pour que le fichier corresponde à ce que la trésorière voit à l'écran.
 - **Une ligne par polo commandé** (`LigneCommande`). Colonnes :
@@ -214,7 +223,7 @@ Chaque chantier indique les fichiers concernés, les étapes et le **critère de
 - **Modifier un email = modifier uniquement son fichier `.html`.** Dans un tableau, deux cellules d'une même ligne deviennent « gauche : droite » dans la version texte, et un bouton devient « texte : lien ».
 - 3 essais d'envoi (pause de 1 puis 2 s), puis `logger.error` avec l'id de la commande seulement. Une erreur d'email ne fait jamais échouer la requête.
 - Lien de suivi : `FRONTEND_URL` + `FRONTEND_ROUTE_SUIVI` (nouveau réglage, `/suivi` par défaut) + `?code=POLO-...`. L'email de l'acheteur n'est jamais mis dans l'URL.
-- **Décision** : `ANNULER_DECISION` n'envoie pas d'email (décision interne).
+- **Décision (Roméo, 19/11)** : `ANNULER_DECISION` **prévient l'acheteur** (gabarit `decision_annulee.html`) : sa commande repasse en attente de vérification, il doit le voir.
 
 Le cahier des charges initial :
 
@@ -228,6 +237,7 @@ Le cahier des charges initial :
 | `REMIS` | Polos remis | Confirmation, remerciement |
 | `REFUSEE` | Commande refusée | Motif, commentaire, marche à suivre |
 | `CLOTUREE` | Clôture | Raison, comment recommander |
+| `EN_ATTENTE` (après annulation d'une décision par l'admin) | Commande en cours de nouvelle vérification | La décision est annulée, rien à faire, un email suivra |
 
 - **Objet de chaque email : il doit contenir le code de suivi**, car un même email peut avoir plusieurs commandes.
 - Gabarits dans `templates/emails/` (texte, et HTML si le temps le permet). Ils doivent rester lisibles sur mobile.
@@ -237,14 +247,17 @@ Le cahier des charges initial :
 
 **Fini quand** : chaque transition produit le bon email (testable avec `django.core.mail.outbox` dans les tests).
 
-### Chantier 9 · Clôture automatique après 7 jours
+### Chantier 9 · Clôture automatique après 7 jours ✅ Fait
 - Créer une commande de gestion `apps/commandes/management/commands/cloturer_commandes.py`.
 - Elle sélectionne les commandes `A_CORRIGER` dont `date_decision` est plus vieille que `ParametresVente.delai_correction_jours`, et appelle `appliquer_transition(commande, Action.CLOTURER)` sur chacune. Une erreur sur une commande ne doit pas arrêter les autres.
 - À lancer une fois par jour sur le serveur (tâche planifiée).
 
 **Fini quand** : `python manage.py cloturer_commandes` clôture les bonnes commandes, avec un test.
 
-### Chantier 10 · Mise en production
+### Chantier 10 · Mise en production 🟡 Préparée
+
+**Fait** : `gunicorn` et `whitenoise` ajoutés, `check --deploy` sans problème, guide complet dans [DEPLOIEMENT.md](DEPLOIEMENT.md). **Reste** : choisir l'hébergeur, créer le `.env` de production, déployer.
+
 - Choisir l'hébergeur (back + PostgreSQL), avec HTTPS.
 - Ajouter `gunicorn` (ou équivalent) et `whitenoise` pour les fichiers statiques de `/admin/`.
 - `.env` de production :

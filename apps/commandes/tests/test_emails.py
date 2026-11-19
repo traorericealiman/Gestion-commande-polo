@@ -127,10 +127,16 @@ class EmailsTests(BaseAPITest):
                 self.assertNotIn("{{", html)
                 self.assertNotIn("{%", html)
 
-    def test_annulation_de_decision_sans_email(self):
+    def test_annulation_de_decision_previent_l_acheteur(self):
         commande = creer_commande(statut=Statut.VALIDEE)
         self.appliquer(commande, Action.ANNULER_DECISION, auteur=creer_admin(), motif=MotifRefus.AUTRE)
-        self.assertEqual(mail.outbox, [])
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ["acheteur@test.ci"])
+        self.assertIn(commande.code_suivi, email.subject)
+        self.assertIn("repasse en vérification", email.subject)
+        self.assertIn("en attente de vérification", email.body)
 
     # --- Contenu -------------------------------------------------------------
 

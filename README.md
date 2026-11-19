@@ -121,7 +121,7 @@ Le motif est obligatoire pour refuser, demander un complément et annuler une d�
 
 Tous préfixés par `/api/v1/`. Le détail des champs se trouve dans Swagger (`/api/docs/`) ou dans `docs/openapi.yaml`.
 
-**État** : ✅ codé et testé · 🚧 contrat défini, renvoie `501` pour l'instant
+**État** : ✅ codé et testé (tous les endpoints)
 
 ### Public (sans compte)
 
@@ -149,17 +149,17 @@ Il faut envoyer l'en-tête `Authorization: Bearer <access>` sur toutes les route
 | Méthode | Route | Rôle | État |
 |---|---|---|---|
 | GET | `gestion/commandes/` | Liste paginée, filtres, recherche | ✅ |
-| GET | `gestion/commandes/{id}/` | Fiche complète + alertes + historique | 🚧 |
-| PATCH | `gestion/commandes/{id}/` | Modifier la note interne | 🚧 |
-| GET | `gestion/commandes/{id}/capture/` | Télécharger la capture | 🚧 |
+| GET | `gestion/commandes/{id}/` | Fiche complète + alertes + historique | ✅ |
+| PATCH | `gestion/commandes/{id}/` | Modifier la note interne | ✅ |
+| GET | `gestion/commandes/{id}/capture/` | Télécharger la capture | ✅ |
 | POST | `gestion/commandes/{id}/valider/` | Valider | ✅ |
 | POST | `gestion/commandes/{id}/refuser/` | Refuser (`motif` obligatoire) | ✅ |
 | POST | `gestion/commandes/{id}/demander-complement/` | Passer en « À corriger » (`motif` obligatoire) | ✅ |
 | POST | `gestion/commandes/{id}/marquer-disponible/` | Polo prêt | ✅ |
 | POST | `gestion/commandes/{id}/marquer-remis/` | Polos remis | ✅ |
 | POST | `gestion/commandes/{id}/annuler-decision/` | Admin uniquement (`motif` obligatoire) | ✅ |
-| GET | `gestion/commandes/export/` | Export CSV | 🚧 |
-| GET | `gestion/tableau-de-bord/` | Compteurs, montants, stocks | 🚧 |
+| GET | `gestion/commandes/export/` | Export CSV (mêmes filtres que la liste) | ✅ |
+| GET | `gestion/tableau-de-bord/` | Compteurs, montants, stocks | ✅ |
 
 Filtres de la liste : `statut`, `moyen_paiement`, `modele`, `version`, `manches`, `taille`, `date_min`, `date_max`, `search` (code, nom, prénoms, email, numéro, référence), `ordering`, `page`.
 
@@ -185,7 +185,12 @@ Toutes les erreurs ont la même forme :
 | 404 | `not_found` | Commande introuvable |
 | 409 | `transition_interdite` / `stock_insuffisant` | Action impossible dans l'état actuel |
 | 429 | `throttled` | Trop de requêtes |
-| 501 | `non_implemente` | Endpoint pas encore codé |
+
+---
+
+## Mise en production
+
+Voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) : `.env` de production, commandes de déploiement (gunicorn, whitenoise), tâche planifiée `cloturer_commandes`, vérifications.
 
 ---
 

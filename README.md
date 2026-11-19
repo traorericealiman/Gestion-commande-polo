@@ -128,9 +128,9 @@ Tous préfixés par `/api/v1/`. Le détail des champs se trouve dans Swagger (`/
 | Méthode | Route | Rôle | État |
 |---|---|---|---|
 | GET | `catalogue/` | Tarifs, tailles, disponibilités, numéros de dépôt, ventes ouvertes ou non | ✅ |
-| POST | `commandes/` | Passer une commande (multipart, avec la capture) | 🚧 |
-| POST | `suivi/` | Suivre sa commande (code de suivi **+ email**) | 🚧 |
-| POST | `suivi/capture/` | Renvoyer une capture quand la commande est « À corriger » | 🚧 |
+| POST | `commandes/` | Passer une commande (multipart, avec la capture) | ✅ |
+| POST | `suivi/` | Suivre sa commande (code de suivi **+ email**) | ✅ |
+| POST | `suivi/capture/` | Renvoyer une capture quand la commande est « À corriger » | ✅ |
 | GET | `sante/` | État du service | ✅ |
 
 ### Authentification (trésorières / administrateur)
@@ -165,7 +165,7 @@ Filtres de la liste : `statut`, `moyen_paiement`, `modele`, `version`, `manches`
 
 ### Autres travaux back-end restants (hors endpoints)
 
-- Envoi des emails à chaque changement de statut (`services.notifier_changement_statut`).
+- ~~Envoi des emails à chaque changement de statut~~ ✅ fait (`services.notifier_changement_statut`, gabarits dans `templates/emails/`).
 - Clôture automatique des commandes « À corriger » après 7 jours (commande de gestion à lancer chaque jour).
 - Détection des doublons (même empreinte de capture, même référence de transaction) pour les alertes de la fiche.
 

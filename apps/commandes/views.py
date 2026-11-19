@@ -20,7 +20,13 @@ from apps.core.permissions import EstTresoriereOuAdmin
 from . import serializers as s
 from .filters import CommandeFilter
 from .models import Commande
-from .services import appliquer_transition
+from .services import (
+    appliquer_transition,
+    creer_commande,
+    donnees_suivi,
+    renvoyer_capture,
+    trouver_commande_acheteur,
+)
 from .statuts import Action, Statut
 
 # ==========================================================================
@@ -29,15 +35,11 @@ from .statuts import Action, Statut
 
 
 class CommandeCreationView(APIView):
-    """[À FAIRE] Enregistre une commande au statut EN_ATTENTE.
+    """[FAIT] Enregistre une commande au statut EN_ATTENTE.
 
-    Étapes attendues (dans une transaction) :
-      1. refuser si les ventes sont fermées (VentesFermees) ;
-      2. vérifier quantité ≤ ParametresVente.quantite_max_par_ligne et taille non épuisée ;
-      3. calculer les prix avec catalogue.services.prix_unitaire (jamais depuis le client) ;
-      4. créer Commande, LigneCommande(s), Paiement, Capture (empreinte SHA-256) ;
-      5. générer le code de suivi (services.generer_code_suivi) ;
-      6. créer l'Evenement SOUMETTRE et envoyer l'accusé de réception.
+    Toute la logique est dans services.creer_commande : ventes ouvertes,
+    quantité maximum et stock par variante, prix calculés par le serveur,
+    capture (empreinte SHA-256), code de suivi, historique et accusé de réception.
     """
 
     permission_classes = [AllowAny]
@@ -55,11 +57,14 @@ class CommandeCreationView(APIView):
         },
     )
     def post(self, request):
-        raise NonImplemente()
+        entree = s.CommandeCreationSerializer(data=request.data)
+        entree.is_valid(raise_exception=True)
+        commande = creer_commande(entree.validated_data)
+        return Response(s.CommandeCreeeSerializer(commande).data, status=status.HTTP_201_CREATED)
 
 
 class SuiviView(APIView):
-    """[À FAIRE] Renvoie l'état d'une commande à partir du code ET de l'email.
+    """[FAIT] Renvoie l'état d'une commande à partir du code ET de l'email.
     Si le couple ne correspond pas : 404 avec un message générique."""
 
     permission_classes = [AllowAny]
@@ -72,11 +77,14 @@ class SuiviView(APIView):
         responses={200: s.SuiviSerializer, 404: OpenApiResponse(description="Commande introuvable")},
     )
     def post(self, request):
-        raise NonImplemente()
+        entree = s.SuiviRequeteSerializer(data=request.data)
+        entree.is_valid(raise_exception=True)
+        commande = trouver_commande_acheteur(**entree.validated_data)
+        return Response(s.SuiviSerializer(donnees_suivi(commande)).data)
 
 
 class RenvoiCaptureView(APIView):
-    """[À FAIRE] L'acheteur renvoie une capture quand sa commande est « À corriger ».
+    """[FAIT] L'acheteur renvoie une capture quand sa commande est « À corriger ».
     Crée une nouvelle Capture puis appelle appliquer_transition(RENVOYER_CAPTURE)."""
 
     permission_classes = [AllowAny]
@@ -94,7 +102,10 @@ class RenvoiCaptureView(APIView):
         },
     )
     def post(self, request):
-        raise NonImplemente()
+        entree = s.RenvoiCaptureSerializer(data=request.data)
+        entree.is_valid(raise_exception=True)
+        commande = renvoyer_capture(**entree.validated_data)
+        return Response(s.SuiviSerializer(donnees_suivi(commande)).data)
 
 
 # ==========================================================================

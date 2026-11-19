@@ -33,9 +33,6 @@ class PublicTests(BaseAPITest):
         self.assertEqual(len(reponse.data["tarifs"]), 8)
         self.assertTrue(reponse.data["ventes_ouvertes"])
 
-    def test_endpoints_a_faire_renvoient_501(self):
-        self.assertEqual(self.client.post(reverse("suivi"), {}).status_code, 501)
-
 
 class AuthTests(BaseAPITest):
     def test_connexion_et_profil(self):

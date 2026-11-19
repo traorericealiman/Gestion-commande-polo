@@ -1,0 +1,11 @@
+{% extends "emails/_base.html" %}
+{% block apercu %}Votre commande n'a pas pu être validée.{% endblock %}
+{% block fond_bandeau %}#fef2f2{% endblock %}
+{% block couleur_bandeau %}#b91c1c{% endblock %}
+{% block bandeau %}Commande refusée{% endblock %}
+{% block contenu %}
+<p style="margin:0 0 14px;">Nous n'avons pas pu valider votre commande <strong>{{ commande.code_suivi }}</strong>.</p>
+{% include "emails/_encadre.html" %}
+<p style="margin:0 0 14px;">Si vous souhaitez toujours un polo, vous pouvez passer une nouvelle commande en joignant une capture lisible de votre paiement.</p>
+{% include "emails/_bouton.html" with lien=lien_site texte="Passer une nouvelle commande" %}
+{% endblock %}

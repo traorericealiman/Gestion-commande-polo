@@ -203,6 +203,8 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Polos ESATIC <no-reply@e
 
 # URL du front, utilisée pour construire les liens de suivi dans les emails.
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+# Route de la page de suivi côté front (lien des emails : FRONTEND_URL + route + ?code=...).
+FRONTEND_ROUTE_SUIVI = env("FRONTEND_ROUTE_SUIVI", default="/suivi")
 
 # --------------------------------------------------------------------------
 # Sécurité en production (activée automatiquement quand DEBUG=False)

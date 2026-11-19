@@ -1,0 +1,22 @@
+{% extends "emails/_base.html" %}
+{% block apercu %}Votre polo est prêt : vous pouvez venir le récupérer.{% endblock %}
+{% block fond_bandeau %}#ecfdf5{% endblock %}
+{% block couleur_bandeau %}#047857{% endblock %}
+{% block bandeau %}Votre polo est disponible{% endblock %}
+{% block contenu %}
+<p style="margin:0 0 14px;">Votre commande <strong>{{ commande.code_suivi }}</strong> est prête : vous pouvez venir récupérer votre polo.</p>
+{% if parametres.lieu_retrait or parametres.horaires_retrait or parametres.contact_retrait %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 18px;">
+  <tr>
+    <td style="padding:12px 16px;background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;line-height:1.7;">
+      {% if parametres.lieu_retrait %}<strong>Lieu :</strong> {{ parametres.lieu_retrait }}<br>{% endif %}
+      {% if parametres.horaires_retrait %}<strong>Horaires :</strong> {{ parametres.horaires_retrait }}<br>{% endif %}
+      {% if parametres.contact_retrait %}<strong>Contact :</strong> {{ parametres.contact_retrait }}{% endif %}
+    </td>
+  </tr>
+</table>
+{% endif %}
+<p style="margin:0 0 14px;">Présentez ce code au retrait :</p>
+<p style="margin:0 0 18px;font-size:22px;font-weight:bold;letter-spacing:1px;color:#1e3a8a;">{{ commande.code_suivi }}</p>
+{% include "emails/_recapitulatif.html" %}
+{% endblock %}

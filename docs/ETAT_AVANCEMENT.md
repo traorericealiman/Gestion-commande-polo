@@ -20,13 +20,14 @@ Pour installer le projet, lisez le [README](../README.md). Pour les branches, co
 | Authentification des trésorières (JWT) | ✅ Fait et testé |
 | Catalogue public | ✅ Fait et testé |
 | Liste des commandes + 6 actions de gestion | ✅ Fait et testé |
-| Passer une commande | 🚧 À faire |
-| Suivi de commande + renvoi de capture | 🚧 À faire |
+| Passer une commande | ✅ Fait et testé |
+| Suivi de commande | ✅ Fait et testé |
+| Renvoi de capture | ✅ Fait et testé |
 | Fiche d'une commande (avec alertes) + note interne | 🚧 À faire |
 | Téléchargement de la capture | 🚧 À faire |
 | Tableau de bord | 🚧 À faire |
 | Export CSV | 🚧 À faire |
-| Emails automatiques | 🚧 À faire |
+| Emails automatiques | ✅ Fait et testé (texte + HTML) |
 | Clôture automatique après 7 jours | 🚧 À faire |
 | Mise en production | 🚧 À faire |
 
@@ -74,7 +75,7 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
   - à la validation, **bloque si le stock est insuffisant** (erreur 409 `stock_insuffisant`) ;
   - met à jour les dates (décision, remise, remis par) ;
   - écrit l'`Evenement` dans l'historique ;
-  - appelle `notifier_changement_statut()` après l'enregistrement (aujourd'hui, une simple ligne de log : voir chantier 8).
+  - appelle `notifier_changement_statut(commande_id, action)` après l'enregistrement, qui envoie l'email à l'acheteur (voir chantier 8).
 - `generer_code_suivi(commande)` → `POLO-2026-0042` (basé sur l'id ; à appeler **après** le premier `save()`).
 - `catalogue/services.py` → `prix_unitaire(...)` et `quantite_restante(...)`. Seules les commandes **validées, disponibles ou remises** consomment du stock.
 
@@ -87,6 +88,9 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
 | `POST auth/rafraichir/` · `POST auth/deconnexion/` · `GET auth/moi/` | Renouveler, invalider, profil |
 | `GET gestion/commandes/` | Liste paginée par 25. Les commandes en attente en premier. Filtres et recherche : voir README. |
 | `POST gestion/commandes/{id}/valider/`, `refuser/`, `demander-complement/`, `marquer-disponible/`, `marquer-remis/`, `annuler-decision/` | Les 6 actions, toutes via `appliquer_transition`. Réponse `204`. |
+| `POST commandes/` | Passer une commande : ventes ouvertes, quantité max et stock par variante (lignes identiques additionnées), prix calculés par le serveur, capture avec empreinte, code de suivi, historique `SOUMETTRE`, accusé de réception via `on_commit`. Logique dans `services.creer_commande` ; `services.enregistrer_capture` est réutilisable pour le renvoi de capture. |
+| `POST suivi/` | Suivre sa commande avec le code **et** l'email (casse et espaces ignorés). 404 générique identique si l'un des deux est faux. `retrait` rempli seulement au statut `POLO_DISPONIBLE`. Logique dans `services.trouver_commande_acheteur` et `services.donnees_suivi`, réutilisables pour le renvoi de capture. |
+| `POST suivi/capture/` | Renvoyer une capture quand la commande est `A_CORRIGER` (409 sinon, 404 générique si code ou email faux). Nouvelle `Capture`, l'ancienne est conservée ; référence de transaction mise à jour si fournie ; retour à `EN_ATTENTE` via `appliquer_transition` (historique + email). Logique dans `services.renvoyer_capture`. |
 | `GET sante/` | État de l'API et de la base |
 
 ### 2.5 Sécurité déjà en place
@@ -97,7 +101,7 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
 - En production (`DEBUG=False`) : HTTPS forcé, cookies sécurisés, HSTS.
 
 ### 2.6 Tests
-26 tests, tous verts. Ils couvrent les transitions, les rôles, le stock, l'API (connexion, liste, actions, erreurs) et la validation des captures. Les fabriques réutilisables sont dans [apps/commandes/tests/fabriques.py](../apps/commandes/tests/fabriques.py) : `creer_commande()`, `creer_tresoriere()`, `creer_admin()`, `fichier_png()`.
+73 tests, tous verts. Ils couvrent les transitions, les rôles, le stock, l'API (connexion, liste, actions, erreurs), la validation des captures, la création de commande (`tests/test_creation.py`), le suivi (`tests/test_suivi.py`), le renvoi de capture (`tests/test_renvoi_capture.py`) et les emails (`tests/test_emails.py`). Les fabriques réutilisables sont dans [apps/commandes/tests/fabriques.py](../apps/commandes/tests/fabriques.py) : `creer_commande()`, `creer_tresoriere()`, `creer_admin()`, `fichier_png()`.
 
 ---
 
@@ -137,7 +141,7 @@ Chaque chantier indique les fichiers concernés, les étapes et le **critère de
    - `retrait` = `{lieu, horaires, contact}` tirés de `ParametresVente` **seulement si** le statut est `POLO_DISPONIBLE`, sinon `null` ;
    - `peut_renvoyer_capture` = statut `A_CORRIGER`.
 
-⚠️ Le test `test_endpoints_a_faire_renvoient_501` (dans `tests/test_api.py`) appelle cet endpoint. **Remplacez-le** par de vrais tests de suivi.
+✅ Le test `test_endpoints_a_faire_renvoient_501` a été supprimé et remplacé par `tests/test_suivi.py`.
 **Fini quand** : bon couple → 200 ; mauvais email → 404 ; retrait visible seulement au statut `POLO_DISPONIBLE`.
 
 ### Chantier 3 · `POST /api/v1/suivi/capture/` : renvoyer une capture
@@ -201,8 +205,18 @@ Chaque chantier indique les fichiers concernés, les étapes et le **critère de
 
 **Fini quand** : le fichier s'ouvre proprement dans Excel ; le filtre `statut=VALIDEE` est respecté.
 
-### Chantier 8 · Emails automatiques
-**Fichier** : `notifier_changement_statut(commande_id)` dans `services.py`. Elle est **déjà appelée** à chaque transition ; elle ne fait qu'écrire un log pour l'instant.
+### Chantier 8 · Emails automatiques ✅ Fait
+
+**Ce qui a été fait** :
+- `notifier_changement_statut(commande_id, action)` dans `services.py` choisit l'email d'après **l'action** qui vient d'avoir lieu (table `EMAILS`), pas d'après le statut : `EN_ATTENTE` peut venir d'une création, d'un renvoi de capture ou d'une annulation. Sans `action`, elle lit le dernier `Evenement`.
+- Un seul gabarit HTML par email (`templates/emails/<gabarit>.html`). La version texte, envoyée avec le HTML pour les messageries qui ne l'affichent pas (et pour limiter le classement en spam), est **déduite automatiquement** du HTML par `services._html_vers_texte`. Objet : `[POLO-2026-0042] ...`.
+- HTML : base commune `_base.html` (en-tête, bandeau de couleur selon l'email, pied avec le code de suivi), blocs `_recapitulatif.html`, `_bouton.html`, `_encadre.html`. Styles en ligne et mise en page en tableaux (compatibles Gmail / Outlook), largeur 560 px max, lisible sur mobile. Le commentaire de la trésorière est échappé (pas d'injection HTML).
+- **Modifier un email = modifier uniquement son fichier `.html`.** Dans un tableau, deux cellules d'une même ligne deviennent « gauche : droite » dans la version texte, et un bouton devient « texte : lien ».
+- 3 essais d'envoi (pause de 1 puis 2 s), puis `logger.error` avec l'id de la commande seulement. Une erreur d'email ne fait jamais échouer la requête.
+- Lien de suivi : `FRONTEND_URL` + `FRONTEND_ROUTE_SUIVI` (nouveau réglage, `/suivi` par défaut) + `?code=POLO-...`. L'email de l'acheteur n'est jamais mis dans l'URL.
+- **Décision** : `ANNULER_DECISION` n'envoie pas d'email (décision interne).
+
+Le cahier des charges initial :
 
 | Statut atteint | Email | Contenu essentiel |
 |---|---|---|
@@ -263,7 +277,7 @@ Chaque chantier indique les fichiers concernés, les étapes et le **critère de
 - **Textes des emails modifiables par l'admin** (cahier §5.5) : pas prévu pour l'instant, les textes sont dans des gabarits. À ajouter seulement si le temps le permet.
 - **Journal d'activité global** (connexions, exports, changements de paramètres) : l'historique par commande existe, pas le journal global.
 - **Durée de conservation des captures** après la fin de la vente : à fixer.
-- **Route du front pour le lien de suivi** dans les emails : à convenir avec l'équipe front.
+- **Route du front pour le lien de suivi** dans les emails : `/suivi?code=POLO-...` par défaut. Si le front utilise une autre route, changer `FRONTEND_ROUTE_SUIVI` dans le `.env` (aucun code à modifier).
 
 ## 6. Points d'attention
 

@@ -1,0 +1,12 @@
+{% extends "emails/_base.html" %}
+{% block apercu %}Action requise : envoyez une nouvelle capture de paiement.{% endblock %}
+{% block fond_bandeau %}#fffbeb{% endblock %}
+{% block couleur_bandeau %}#b45309{% endblock %}
+{% block bandeau %}Action requise : complément demandé{% endblock %}
+{% block contenu %}
+<p style="margin:0 0 14px;">La trésorière a besoin d'un complément pour valider votre commande <strong>{{ commande.code_suivi }}</strong>.</p>
+{% include "emails/_encadre.html" %}
+<p style="margin:0 0 14px;"><strong>Que faire ?</strong> Ouvrez la page de suivi et envoyez une nouvelle capture de votre paiement.</p>
+{% include "emails/_bouton.html" with lien=lien_suivi texte="Envoyer une nouvelle capture" %}
+{% if date_limite %}<p style="margin:0 0 14px;font-size:14px;color:#92400e;">Vous avez jusqu'au <strong>{{ date_limite|date:"d/m/Y à H\hi" }}</strong>. Passé ce délai, la commande sera clôturée automatiquement.</p>{% endif %}
+{% endblock %}

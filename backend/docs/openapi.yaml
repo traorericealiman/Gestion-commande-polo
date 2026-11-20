@@ -1,0 +1,1670 @@
+openapi: 3.0.3
+info:
+  title: API Polo ESATIC
+  version: 1.0.0
+  description: 'API de commande de polos. Partie publique : catalogue, commande, suivi.
+    Partie gestion : trésorières et administrateur (authentification JWT).'
+paths:
+  /api/v1/auth/connexion/:
+    post:
+      operationId: v1_auth_connexion_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      summary: Se connecter
+      tags:
+      - Authentification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenObtainPair'
+          description: ''
+  /api/v1/auth/deconnexion/:
+    post:
+      operationId: v1_auth_deconnexion_create
+      summary: Se déconnecter
+      tags:
+      - Authentification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeconnexionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeconnexionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeconnexionRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Déconnecté
+  /api/v1/auth/moi/:
+    get:
+      operationId: v1_auth_moi_retrieve
+      summary: Utilisateur connecté
+      tags:
+      - Authentification
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Moi'
+          description: ''
+  /api/v1/auth/mot-de-passe/oubli/:
+    post:
+      operationId: v1_auth_mot_de_passe_oubli_create
+      description: Répond toujours 204, que l'email corresponde à un compte ou non,
+        pour ne pas révéler quels comptes existent. Le lien envoyé mène à la page
+        de réinitialisation du front (`?uid=...&token=...`).
+      summary: 'Mot de passe oublié : recevoir un lien par email'
+      tags:
+      - Authentification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemandeReinitialisationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DemandeReinitialisationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DemandeReinitialisationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '204':
+          description: Demande prise en compte
+  /api/v1/auth/mot-de-passe/reinitialiser/:
+    post:
+      operationId: v1_auth_mot_de_passe_reinitialiser_create
+      description: '`uid` et `token` viennent du lien reçu par email. 400 si le lien
+        est invalide, expiré ou déjà utilisé (`erreurs.token`), ou si le mot de passe
+        est trop faible (`erreurs.mot_de_passe`). Après succès, toutes les sessions
+        ouvertes sont fermées : il faut se reconnecter.'
+      summary: Choisir un nouveau mot de passe
+      tags:
+      - Authentification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReinitialisationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReinitialisationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReinitialisationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '204':
+          description: Mot de passe modifié
+  /api/v1/auth/rafraichir/:
+    post:
+      operationId: v1_auth_rafraichir_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      summary: Rafraîchir le jeton d'accès
+      tags:
+      - Authentification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/v1/catalogue/:
+    get:
+      operationId: v1_catalogue_retrieve
+      description: Tout ce dont le formulaire de commande a besoin, en un seul appel.
+      summary: Catalogue et paramètres de vente
+      tags:
+      - Public
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Catalogue'
+          description: ''
+  /api/v1/commandes/:
+    post:
+      operationId: v1_commandes_create
+      description: |-
+        [FAIT] Enregistre une commande au statut EN_ATTENTE.
+
+        Toute la logique est dans services.creer_commande : ventes ouvertes,
+        quantité maximum et stock par variante, prix calculés par le serveur,
+        capture (empreinte SHA-256), code de suivi, historique et accusé de réception.
+      summary: Passer une commande
+      tags:
+      - Public
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommandeCreationRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandeCreee'
+          description: ''
+        '400':
+          description: Données invalides
+        '403':
+          description: Ventes fermées
+  /api/v1/gestion/commandes/:
+    get:
+      operationId: v1_gestion_commandes_list
+      description: |-
+        [FAIT] Liste paginée, filtrable et cherchable.
+
+        Tri par défaut : commandes en attente d'abord, puis les autres ; dans
+        chaque groupe, de la plus ancienne à la plus récente. `?ordering=` le remplace.
+      summary: Lister les commandes
+      parameters:
+      - in: query
+        name: date_max
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: date_min
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: manches
+        schema:
+          type: string
+          enum:
+          - COURTES
+          - LONGUES
+        description: |-
+          * `COURTES` - Manches courtes
+          * `LONGUES` - Manches longues
+      - in: query
+        name: modele
+        schema:
+          type: string
+          enum:
+          - LICENCE
+          - MASTER
+        description: |-
+          * `LICENCE` - Licence
+          * `MASTER` - Master
+      - in: query
+        name: moyen_paiement
+        schema:
+          type: string
+          enum:
+          - MOOV_MONEY
+          - MTN_MONEY
+          - ORANGE_MONEY
+          - WAVE
+        description: |-
+          * `WAVE` - Wave
+          * `ORANGE_MONEY` - Orange Money
+          * `MTN_MONEY` - MTN Money
+          * `MOOV_MONEY` - Moov Money
+      - name: ordering
+        required: false
+        in: query
+        description: Quel champ utiliser pour classer les résultats.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Un numéro de page de l'ensemble des résultats.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Un terme de recherche.
+        schema:
+          type: string
+      - in: query
+        name: statut
+        schema:
+          type: string
+          enum:
+          - A_CORRIGER
+          - CLOTUREE
+          - EN_ATTENTE
+          - POLO_DISPONIBLE
+          - REFUSEE
+          - REMIS
+          - VALIDEE
+        description: |-
+          * `EN_ATTENTE` - En attente de vérification
+          * `A_CORRIGER` - À corriger
+          * `VALIDEE` - Validée
+          * `POLO_DISPONIBLE` - Polo disponible
+          * `REMIS` - Remis
+          * `REFUSEE` - Refusée
+          * `CLOTUREE` - Clôturée
+      - in: query
+        name: taille
+        schema:
+          type: string
+          enum:
+          - L
+          - M
+          - S
+          - XL
+          - XXL
+        description: |-
+          * `S` - S
+          * `M` - M
+          * `L` - L
+          * `XL` - XL
+          * `XXL` - XXL
+      - in: query
+        name: version
+        schema:
+          type: string
+          enum:
+          - BRODE
+          - SIMPLE
+        description: |-
+          * `SIMPLE` - Simple
+          * `BRODE` - Brodé
+      tags:
+      - Gestion
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCommandeListeList'
+          description: ''
+  /api/v1/gestion/commandes/{id}/:
+    get:
+      operationId: v1_gestion_commandes_retrieve
+      description: |-
+        [FAIT] Fiche complète d'une commande, avec alertes calculées :
+        même empreinte de capture ou même référence de transaction sur une autre
+        commande, stock insuffisant. Logique dans services.fiche_commande.
+      summary: Fiche d'une commande
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandeDetail'
+          description: ''
+    patch:
+      operationId: v1_gestion_commandes_partial_update
+      description: Seul `note_interne` est modifié ; tout autre champ envoyé est ignoré.
+      summary: Modifier la note interne
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedNoteInterneRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedNoteInterneRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedNoteInterneRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandeDetail'
+          description: ''
+  /api/v1/gestion/commandes/{id}/annuler-decision/:
+    post:
+      operationId: gestion_commande_annuler_decision
+      description: VALIDEE ou POLO_DISPONIBLE → EN_ATTENTE. Administrateur uniquement,
+        `motif` obligatoire.
+      summary: Annuler une décision (administrateur)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Action appliquée
+        '400':
+          description: Motif manquant
+        '403':
+          description: Rôle insuffisant
+        '404':
+          description: Commande introuvable
+        '409':
+          description: Statut incompatible ou stock insuffisant
+  /api/v1/gestion/commandes/{id}/capture/:
+    get:
+      operationId: v1_gestion_commandes_capture_retrieve
+      description: |-
+        [FAIT] Renvoie le fichier de la capture actuelle, uniquement aux gestionnaires.
+
+        Le fichier est servi par cette vue authentifiée, jamais par une URL
+        publique. Chaque consultation est journalisée (ids uniquement).
+      summary: Télécharger la capture de paiement
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Fichier JPG, PNG ou PDF
+        '404':
+          description: Commande ou capture introuvable
+  /api/v1/gestion/commandes/{id}/demander-complement/:
+    post:
+      operationId: gestion_commande_demander_complement
+      description: EN_ATTENTE → A_CORRIGER. `motif` obligatoire.
+      summary: Demander un complément
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Action appliquée
+        '400':
+          description: Motif manquant
+        '403':
+          description: Rôle insuffisant
+        '404':
+          description: Commande introuvable
+        '409':
+          description: Statut incompatible ou stock insuffisant
+  /api/v1/gestion/commandes/{id}/marquer-disponible/:
+    post:
+      operationId: gestion_commande_marquer_disponible
+      description: VALIDEE → POLO_DISPONIBLE.
+      summary: Polo prêt / disponible
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Action appliquée
+        '400':
+          description: Motif manquant
+        '403':
+          description: Rôle insuffisant
+        '404':
+          description: Commande introuvable
+        '409':
+          description: Statut incompatible ou stock insuffisant
+  /api/v1/gestion/commandes/{id}/marquer-remis/:
+    post:
+      operationId: gestion_commande_marquer_remis
+      description: VALIDEE ou POLO_DISPONIBLE → REMIS.
+      summary: Marquer les polos remis
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Action appliquée
+        '400':
+          description: Motif manquant
+        '403':
+          description: Rôle insuffisant
+        '404':
+          description: Commande introuvable
+        '409':
+          description: Statut incompatible ou stock insuffisant
+  /api/v1/gestion/commandes/{id}/refuser/:
+    post:
+      operationId: gestion_commande_refuser
+      description: EN_ATTENTE → REFUSEE. `motif` obligatoire.
+      summary: Refuser une commande
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Action appliquée
+        '400':
+          description: Motif manquant
+        '403':
+          description: Rôle insuffisant
+        '404':
+          description: Commande introuvable
+        '409':
+          description: Statut incompatible ou stock insuffisant
+  /api/v1/gestion/commandes/{id}/valider/:
+    post:
+      operationId: gestion_commande_valider
+      description: EN_ATTENTE → VALIDEE. Bloqué si stock insuffisant.
+      summary: Valider une commande
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Gestion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Action appliquée
+        '400':
+          description: Motif manquant
+        '403':
+          description: Rôle insuffisant
+        '404':
+          description: Commande introuvable
+        '409':
+          description: Statut incompatible ou stock insuffisant
+  /api/v1/gestion/commandes/export/:
+    get:
+      operationId: v1_gestion_commandes_export_retrieve
+      description: Mêmes paramètres que la liste (`statut`, `search`, `ordering`...).
+        Séparateur `;`, encodage UTF-8 avec BOM (s'ouvre directement dans Excel).
+      summary: Exporter les commandes (CSV)
+      tags:
+      - Gestion
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Fichier CSV, une ligne par polo
+  /api/v1/gestion/tableau-de-bord/:
+    get:
+      operationId: v1_gestion_tableau_de_bord_retrieve
+      description: |-
+        [FAIT] Compteurs par statut, montants, stock par combinaison.
+        Logique dans services.tableau_de_bord (agrégats SQL).
+      summary: Tableau de bord
+      tags:
+      - Gestion
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableauDeBord'
+          description: ''
+  /api/v1/sante/:
+    get:
+      operationId: v1_sante_retrieve
+      description: Vérifie que l'API et la base répondent (pour la surveillance du
+        site).
+      summary: État du service
+      tags:
+      - Technique
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sante'
+          description: ''
+  /api/v1/suivi/:
+    post:
+      operationId: v1_suivi_create
+      description: |-
+        [FAIT] Renvoie l'état d'une commande à partir du code ET de l'email.
+        Si le couple ne correspond pas : 404 avec un message générique.
+      summary: Suivre ma commande
+      tags:
+      - Public
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuiviRequeteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SuiviRequeteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SuiviRequeteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suivi'
+          description: ''
+        '404':
+          description: Commande introuvable
+  /api/v1/suivi/capture/:
+    post:
+      operationId: v1_suivi_capture_create
+      description: |-
+        [FAIT] L'acheteur renvoie une capture quand sa commande est « À corriger ».
+        Crée une nouvelle Capture puis appelle appliquer_transition(RENVOYER_CAPTURE).
+      summary: Renvoyer une capture de paiement
+      tags:
+      - Public
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RenvoiCaptureRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suivi'
+          description: ''
+        '404':
+          description: No response body
+        '409':
+          description: Commande pas à corriger
+components:
+  schemas:
+    ActionEnum:
+      enum:
+      - SOUMETTRE
+      - VALIDER
+      - REFUSER
+      - DEMANDER_COMPLEMENT
+      - RENVOYER_CAPTURE
+      - MARQUER_DISPONIBLE
+      - MARQUER_REMIS
+      - ANNULER_DECISION
+      - CLOTURER
+      type: string
+      description: |-
+        * `SOUMETTRE` - Commande envoyée
+        * `VALIDER` - Validation
+        * `REFUSER` - Refus
+        * `DEMANDER_COMPLEMENT` - Complément demandé
+        * `RENVOYER_CAPTURE` - Nouvelle capture envoyée
+        * `MARQUER_DISPONIBLE` - Polo disponible
+        * `MARQUER_REMIS` - Polos remis
+        * `ANNULER_DECISION` - Décision annulée
+        * `CLOTURER` - Clôture automatique
+    Alerte:
+      type: object
+      properties:
+        code:
+          $ref: '#/components/schemas/CodeEnum'
+        message:
+          type: string
+        commandes_liees:
+          type: array
+          items:
+            type: string
+          description: Codes de suivi
+      required:
+      - code
+      - commandes_liees
+      - message
+    BlankEnum:
+      enum:
+      - ''
+    Capture:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        type_mime:
+          type: string
+          maxLength: 50
+        taille_octets:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        date_envoi:
+          type: string
+          format: date-time
+          readOnly: true
+        url_telechargement:
+          type: string
+          description: 'URL authentifiée : /api/v1/gestion/commandes/{id}/capture/'
+      required:
+      - date_envoi
+      - id
+      - taille_octets
+      - type_mime
+      - url_telechargement
+    Catalogue:
+      type: object
+      properties:
+        ventes_ouvertes:
+          type: boolean
+        date_ouverture:
+          type: string
+          format: date-time
+          nullable: true
+        date_cloture:
+          type: string
+          format: date-time
+          nullable: true
+        quantite_max_par_ligne:
+          type: integer
+        modeles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Choix'
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Choix'
+        manches:
+          type: array
+          items:
+            $ref: '#/components/schemas/Choix'
+        tailles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Choix'
+        moyens_paiement:
+          type: array
+          items:
+            $ref: '#/components/schemas/Choix'
+        tarifs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tarif'
+        disponibilites:
+          type: array
+          items:
+            $ref: '#/components/schemas/Disponibilite'
+          description: Uniquement les combinaisons qui ont un stock limité. Une combinaison
+            absente de la liste n'a pas de limite.
+        numeros_depot:
+          type: array
+          items:
+            $ref: '#/components/schemas/NumeroDepot'
+          description: Numéros actifs uniquement
+      required:
+      - date_cloture
+      - date_ouverture
+      - disponibilites
+      - manches
+      - modeles
+      - moyens_paiement
+      - numeros_depot
+      - quantite_max_par_ligne
+      - tailles
+      - tarifs
+      - ventes_ouvertes
+      - versions
+    Choix:
+      type: object
+      properties:
+        valeur:
+          type: string
+          description: Valeur technique à renvoyer à l'API, ex. BRODE
+        libelle:
+          type: string
+          description: Texte à afficher, ex. Brodé
+      required:
+      - libelle
+      - valeur
+    CodeEnum:
+      enum:
+      - CAPTURE_DEJA_UTILISEE
+      - REFERENCE_DEJA_UTILISEE
+      - STOCK_INSUFFISANT
+      type: string
+      description: |-
+        * `CAPTURE_DEJA_UTILISEE` - CAPTURE_DEJA_UTILISEE
+        * `REFERENCE_DEJA_UTILISEE` - REFERENCE_DEJA_UTILISEE
+        * `STOCK_INSUFFISANT` - STOCK_INSUFFISANT
+    CommandeCreationRequest:
+      type: object
+      description: Corps de POST /api/v1/commandes/ (multipart/form-data).
+      properties:
+        nom:
+          type: string
+          minLength: 1
+          pattern: ^[A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff' \-]{2,60}$
+          maxLength: 60
+        prenoms:
+          type: string
+          minLength: 2
+          maxLength: 80
+        email:
+          type: string
+          format: email
+          minLength: 1
+        email_confirmation:
+          type: string
+          format: email
+          minLength: 1
+        lignes:
+          type: string
+          description: 'Chaîne JSON : liste de lignes {modele, version, manches, taille,
+            quantite}'
+          example: '[{"modele":"LICENCE","version":"BRODE","manches":"COURTES","taille":"M","quantite":1}]'
+        moyen_paiement:
+          $ref: '#/components/schemas/MoyenPaiementEnum'
+        numero_envoi:
+          type: string
+          minLength: 1
+          pattern: ^\+?[0-9]{8,15}$
+          maxLength: 20
+        reference_transaction:
+          type: string
+          maxLength: 100
+        capture:
+          type: string
+          format: binary
+          description: JPG, PNG ou PDF, 5 Mo maximum
+        confirmation:
+          type: boolean
+          description: Case « Je certifie que les informations et le paiement sont
+            exacts »
+      required:
+      - capture
+      - confirmation
+      - email
+      - email_confirmation
+      - lignes
+      - moyen_paiement
+      - nom
+      - numero_envoi
+      - prenoms
+    CommandeCreee:
+      type: object
+      description: Réponse 201 après l'envoi d'une commande.
+      properties:
+        code_suivi:
+          type: string
+          description: ex. POLO-2026-0042
+        statut:
+          $ref: '#/components/schemas/StatutEnum'
+        montant_total:
+          type: integer
+      required:
+      - code_suivi
+      - montant_total
+      - statut
+    CommandeDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        code_suivi:
+          type: string
+          readOnly: true
+          nullable: true
+        nom:
+          type: string
+          pattern: ^[A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff' \-]{2,60}$
+          maxLength: 60
+        prenoms:
+          type: string
+          title: Prénoms
+          maxLength: 80
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        nombre_polos:
+          type: integer
+        resume_polos:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: ex. « 1 × LICENCE BRODE COURTES M »
+        montant_total:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          title: Montant total (FCFA)
+        moyen_paiement:
+          type: string
+        numero_envoi:
+          type: string
+        statut:
+          $ref: '#/components/schemas/StatutEnum'
+        date_creation:
+          type: string
+          format: date-time
+          readOnly: true
+        lignes:
+          type: array
+          items:
+            $ref: '#/components/schemas/LigneSortie'
+        paiement:
+          $ref: '#/components/schemas/Paiement'
+        capture:
+          allOf:
+          - $ref: '#/components/schemas/Capture'
+          nullable: true
+        motif:
+          oneOf:
+          - $ref: '#/components/schemas/MotifEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        commentaire:
+          type: string
+        note_interne:
+          type: string
+        date_decision:
+          type: string
+          format: date-time
+          nullable: true
+        date_remise:
+          type: string
+          format: date-time
+          nullable: true
+        alertes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alerte'
+        evenements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Evenement'
+        autres_commandes_meme_email:
+          type: array
+          items:
+            type: string
+          description: Codes de suivi, à titre d'information
+        actions_possibles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionEnum'
+          description: Boutons à afficher pour cette commande
+      required:
+      - actions_possibles
+      - alertes
+      - autres_commandes_meme_email
+      - capture
+      - code_suivi
+      - date_creation
+      - email
+      - evenements
+      - id
+      - lignes
+      - montant_total
+      - moyen_paiement
+      - nom
+      - nombre_polos
+      - numero_envoi
+      - paiement
+      - prenoms
+      - resume_polos
+    CommandeListe:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        code_suivi:
+          type: string
+          readOnly: true
+          nullable: true
+        nom:
+          type: string
+          pattern: ^[A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff' \-]{2,60}$
+          maxLength: 60
+        prenoms:
+          type: string
+          title: Prénoms
+          maxLength: 80
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        nombre_polos:
+          type: integer
+        resume_polos:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: ex. « 1 × LICENCE BRODE COURTES M »
+        montant_total:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          title: Montant total (FCFA)
+        moyen_paiement:
+          type: string
+        numero_envoi:
+          type: string
+        statut:
+          $ref: '#/components/schemas/StatutEnum'
+        date_creation:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - code_suivi
+      - date_creation
+      - email
+      - id
+      - montant_total
+      - moyen_paiement
+      - nom
+      - nombre_polos
+      - numero_envoi
+      - prenoms
+      - resume_polos
+    DecisionRequest:
+      type: object
+      description: |-
+        Corps des actions de gestion. `motif` est obligatoire pour refuser,
+        demander un complément et annuler une décision.
+      properties:
+        motif:
+          oneOf:
+          - $ref: '#/components/schemas/MotifEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        commentaire:
+          type: string
+          maxLength: 1000
+    DeconnexionRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    DemandeReinitialisationRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - email
+    Disponibilite:
+      type: object
+      properties:
+        modele:
+          type: string
+        version:
+          type: string
+        manches:
+          type: string
+        taille:
+          type: string
+        restant:
+          type: integer
+          description: '0 = épuisé : griser la taille'
+      required:
+      - manches
+      - modele
+      - restant
+      - taille
+      - version
+    Evenement:
+      type: object
+      properties:
+        action:
+          $ref: '#/components/schemas/ActionEnum'
+        statut_avant:
+          oneOf:
+          - $ref: '#/components/schemas/StatutEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        statut_apres:
+          $ref: '#/components/schemas/StatutEnum'
+        auteur:
+          type: string
+          nullable: true
+        motif:
+          oneOf:
+          - $ref: '#/components/schemas/MotifEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        commentaire:
+          type: string
+        date:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - date
+      - statut_apres
+    LigneSortie:
+      type: object
+      properties:
+        modele:
+          $ref: '#/components/schemas/ModeleEnum'
+        version:
+          $ref: '#/components/schemas/VersionEnum'
+        manches:
+          $ref: '#/components/schemas/ManchesEnum'
+        taille:
+          $ref: '#/components/schemas/TailleEnum'
+        quantite:
+          type: integer
+          maximum: 32767
+          minimum: 1
+        prix_unitaire:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        prix_ligne:
+          type: integer
+          readOnly: true
+      required:
+      - manches
+      - modele
+      - prix_ligne
+      - prix_unitaire
+      - quantite
+      - taille
+      - version
+    ManchesEnum:
+      enum:
+      - COURTES
+      - LONGUES
+      type: string
+      description: |-
+        * `COURTES` - Manches courtes
+        * `LONGUES` - Manches longues
+    ModeleEnum:
+      enum:
+      - LICENCE
+      - MASTER
+      type: string
+      description: |-
+        * `LICENCE` - Licence
+        * `MASTER` - Master
+    Moi:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        first_name:
+          type: string
+          readOnly: true
+          title: Prénom
+        last_name:
+          type: string
+          readOnly: true
+          title: Nom
+        role:
+          allOf:
+          - $ref: '#/components/schemas/RoleEnum'
+          readOnly: true
+        last_login:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          title: Dernière connexion
+      required:
+      - email
+      - first_name
+      - id
+      - last_login
+      - last_name
+      - role
+    MotifEnum:
+      enum:
+      - CAPTURE_ILLISIBLE
+      - MONTANT_INSUFFISANT
+      - PAIEMENT_INTROUVABLE
+      - DOUBLON
+      - AUTRE
+      type: string
+      description: |-
+        * `CAPTURE_ILLISIBLE` - Capture illisible
+        * `MONTANT_INSUFFISANT` - Montant insuffisant
+        * `PAIEMENT_INTROUVABLE` - Paiement introuvable
+        * `DOUBLON` - Doublon
+        * `AUTRE` - Autre
+    MoyenPaiementEnum:
+      enum:
+      - WAVE
+      - ORANGE_MONEY
+      - MTN_MONEY
+      - MOOV_MONEY
+      type: string
+      description: |-
+        * `WAVE` - Wave
+        * `ORANGE_MONEY` - Orange Money
+        * `MTN_MONEY` - MTN Money
+        * `MOOV_MONEY` - Moov Money
+    NumeroDepot:
+      type: object
+      properties:
+        moyen:
+          type: string
+        numero:
+          type: string
+        titulaire:
+          type: string
+      required:
+      - moyen
+      - numero
+      - titulaire
+    PaginatedCommandeListeList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommandeListe'
+    Paiement:
+      type: object
+      properties:
+        moyen:
+          $ref: '#/components/schemas/MoyenPaiementEnum'
+        numero_envoi:
+          type: string
+          title: Numéro depuis lequel le dépôt a été fait
+          pattern: ^\+?[0-9]{8,15}$
+          maxLength: 20
+        reference_transaction:
+          type: string
+          maxLength: 100
+      required:
+      - moyen
+      - numero_envoi
+    PatchedNoteInterneRequest:
+      type: object
+      properties:
+        note_interne:
+          type: string
+          maxLength: 5000
+    ReinitialisationRequest:
+      type: object
+      properties:
+        uid:
+          type: string
+          minLength: 1
+        token:
+          type: string
+          minLength: 1
+        mot_de_passe:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - mot_de_passe
+      - token
+      - uid
+    RenvoiCaptureRequest:
+      type: object
+      description: Corps de POST /api/v1/suivi/capture/ (multipart/form-data).
+      properties:
+        code_suivi:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          type: string
+          format: email
+          minLength: 1
+        capture:
+          type: string
+          format: binary
+        reference_transaction:
+          type: string
+          maxLength: 100
+      required:
+      - capture
+      - code_suivi
+      - email
+    Retrait:
+      type: object
+      properties:
+        lieu:
+          type: string
+        horaires:
+          type: string
+        contact:
+          type: string
+          description: Numéro à contacter pour récupérer le polo
+      required:
+      - contact
+      - horaires
+      - lieu
+    RoleEnum:
+      enum:
+      - TRESORIERE
+      - ADMIN
+      type: string
+      description: |-
+        * `TRESORIERE` - Trésorière
+        * `ADMIN` - Administrateur
+    Sante:
+      type: object
+      properties:
+        statut:
+          type: string
+      required:
+      - statut
+    StatutEnum:
+      enum:
+      - EN_ATTENTE
+      - A_CORRIGER
+      - VALIDEE
+      - POLO_DISPONIBLE
+      - REMIS
+      - REFUSEE
+      - CLOTUREE
+      type: string
+      description: |-
+        * `EN_ATTENTE` - En attente de vérification
+        * `A_CORRIGER` - À corriger
+        * `VALIDEE` - Validée
+        * `POLO_DISPONIBLE` - Polo disponible
+        * `REMIS` - Remis
+        * `REFUSEE` - Refusée
+        * `CLOTUREE` - Clôturée
+    StockLigne:
+      type: object
+      properties:
+        modele:
+          type: string
+        version:
+          type: string
+        manches:
+          type: string
+        taille:
+          type: string
+        demande:
+          type: integer
+          description: Toutes commandes non refusées / clôturées
+        valide:
+          type: integer
+        remis:
+          type: integer
+        restant:
+          type: integer
+          nullable: true
+          description: null = pas de limite
+      required:
+      - demande
+      - manches
+      - modele
+      - remis
+      - restant
+      - taille
+      - valide
+      - version
+    Suivi:
+      type: object
+      description: Réponse de POST /api/v1/suivi/.
+      properties:
+        code_suivi:
+          type: string
+        statut:
+          $ref: '#/components/schemas/StatutEnum'
+        statut_libelle:
+          type: string
+        montant_total:
+          type: integer
+        lignes:
+          type: array
+          items:
+            $ref: '#/components/schemas/LigneSortie'
+        date_creation:
+          type: string
+          format: date-time
+        motif:
+          oneOf:
+          - $ref: '#/components/schemas/MotifEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        motif_libelle:
+          type: string
+        commentaire:
+          type: string
+          description: Message de la trésorière
+        retrait:
+          allOf:
+          - $ref: '#/components/schemas/Retrait'
+          nullable: true
+          description: Rempli seulement quand le statut est POLO_DISPONIBLE
+        peut_renvoyer_capture:
+          type: boolean
+          description: Vrai si statut = A_CORRIGER
+      required:
+      - code_suivi
+      - commentaire
+      - date_creation
+      - lignes
+      - montant_total
+      - motif
+      - motif_libelle
+      - peut_renvoyer_capture
+      - retrait
+      - statut
+      - statut_libelle
+    SuiviRequeteRequest:
+      type: object
+      description: |-
+        Le code seul ne suffit pas (codes séquentiels donc devinables) :
+        il faut aussi l'email utilisé lors de la commande.
+      properties:
+        code_suivi:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - code_suivi
+      - email
+    TableauDeBord:
+      type: object
+      properties:
+        compteurs:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Nombre de commandes par statut
+        montant_encaisse:
+          type: integer
+          description: Commandes validées, disponibles ou remises
+        montant_en_attente:
+          type: integer
+        stocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockLigne'
+      required:
+      - compteurs
+      - montant_en_attente
+      - montant_encaisse
+      - stocks
+    TailleEnum:
+      enum:
+      - S
+      - M
+      - L
+      - XL
+      - XXL
+      type: string
+      description: |-
+        * `S` - S
+        * `M` - M
+        * `L` - L
+        * `XL` - XL
+        * `XXL` - XXL
+    Tarif:
+      type: object
+      properties:
+        modele:
+          type: string
+        version:
+          type: string
+        manches:
+          type: string
+        prix:
+          type: integer
+          description: Prix unitaire en FCFA
+      required:
+      - manches
+      - modele
+      - prix
+      - version
+    TokenObtainPair:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - refresh
+    TokenObtainPairRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          writeOnly: true
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - email
+      - password
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    VersionEnum:
+      enum:
+      - SIMPLE
+      - BRODE
+      type: string
+      description: |-
+        * `SIMPLE` - Simple
+        * `BRODE` - Brodé
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

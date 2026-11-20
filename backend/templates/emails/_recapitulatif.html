@@ -1,0 +1,12 @@
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 18px;font-size:14px;border-collapse:collapse;">
+  {% for ligne in lignes_email %}
+  <tr>
+    <td style="padding:9px 0;border-bottom:1px solid #e5e7eb;">{{ ligne.libelle }}</td>
+    <td align="right" style="padding:9px 0 9px 12px;border-bottom:1px solid #e5e7eb;white-space:nowrap;">{{ ligne.prix }}</td>
+  </tr>
+  {% endfor %}
+  <tr>
+    <td style="padding:11px 0;font-weight:bold;">Montant total</td>
+    <td align="right" style="padding:11px 0 11px 12px;font-weight:bold;white-space:nowrap;">{{ montant_total }}</td>
+  </tr>
+</table>

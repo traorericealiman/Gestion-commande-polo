@@ -1,0 +1,10 @@
+{% extends "emails/_base.html" %}
+{% block apercu %}Choisissez un nouveau mot de passe pour votre compte de gestion.{% endblock %}
+{% block bandeau %}Réinitialisation du mot de passe{% endblock %}
+{% block salutation %}Bonjour{% if utilisateur.first_name %} {{ utilisateur.first_name }}{% endif %},{% endblock %}
+{% block contenu %}
+<p style="margin:0 0 14px;">Une demande de réinitialisation du mot de passe a été faite pour votre compte de gestion des polos ESATIC.</p>
+<p style="margin:0 0 14px;">Pour choisir un nouveau mot de passe, cliquez sur le bouton ci-dessous. Ce lien ne fonctionne qu'une fois et expire dans {{ duree_validite }}.</p>
+{% include "emails/_bouton.html" with lien=lien texte="Choisir un nouveau mot de passe" %}
+<p style="margin:0 0 14px;">Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe actuel reste valable.</p>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "emails/_base.html" %}
+{% block apercu %}Vos polos vous ont été remis. Merci !{% endblock %}
+{% block fond_bandeau %}#ecfdf5{% endblock %}
+{% block couleur_bandeau %}#047857{% endblock %}
+{% block bandeau %}Polos remis{% endblock %}
+{% block contenu %}
+<p style="margin:0 0 14px;">Vos polos de la commande <strong>{{ commande.code_suivi }}</strong> vous ont été remis.</p>
+<p style="margin:0 0 14px;">Merci pour votre commande et bon port de votre polo ESATIC !</p>
+{% endblock %}

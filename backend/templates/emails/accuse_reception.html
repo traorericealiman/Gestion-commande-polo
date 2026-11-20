@@ -1,0 +1,10 @@
+{% extends "emails/_base.html" %}
+{% block apercu %}Nous avons bien reçu votre commande {{ commande.code_suivi }}.{% endblock %}
+{% block bandeau %}Commande reçue{% endblock %}
+{% block contenu %}
+<p style="margin:0 0 14px;">Nous avons bien reçu votre commande <strong>{{ commande.code_suivi }}</strong>.</p>
+{% include "emails/_recapitulatif.html" %}
+<p style="margin:0 0 14px;">Votre paiement va maintenant être vérifié par la trésorière. Vous recevrez un email dès qu'une décision sera prise.</p>
+{% include "emails/_bouton.html" with lien=lien_suivi texte="Suivre ma commande" %}
+<p style="margin:0 0 14px;font-size:13px;color:#6b7280;">Pour suivre votre commande, il vous suffit de votre code de suivi et de cette adresse email.</p>
+{% endblock %}

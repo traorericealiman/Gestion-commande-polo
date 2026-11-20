@@ -6,11 +6,9 @@ appellent les fonctions de ce module.
 
 import csv
 import logging
-import re
 import time
 from collections import defaultdict
 from datetime import timedelta
-from html import unescape
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -21,13 +19,13 @@ from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import strip_tags
 from rest_framework import status
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 
 from apps.catalogue.choices import Manches, Modele, Taille, Version
 from apps.catalogue.models import ParametresVente, Stock
 from apps.catalogue.services import VarianteInconnue, prix_unitaire, quantite_restante
+from apps.core.emails import html_vers_texte
 from apps.core.exceptions import TransitionInterdite, VentesFermees
 from apps.core.validators import detecter_type, empreinte_sha256
 
@@ -357,25 +355,6 @@ def _contexte_email(commande: Commande) -> dict:
     }
 
 
-def _html_vers_texte(html: str) -> str:
-    """Version texte de l'email, déduite automatiquement du HTML.
-
-    Envoyée avec le HTML : certaines messageries (ou réglages) n'affichent que
-    le texte, et un email sans version texte est plus souvent classé en spam.
-    Un seul gabarit à maintenir par email.
-    """
-    texte = re.sub(r"(?is)<head.*?</head>|<div[^>]*display:none.*?</div>", "", html)
-    texte = re.sub(r"\s+", " ", texte)  # en HTML, les retours à la ligne du gabarit ne comptent pas
-    texte = re.sub(r'(?i)<a\s[^>]*href="([^"]+)"[^>]*>(.*?)</a>', r"\2 : \1", texte)
-    texte = re.sub(r"(?i)</td>\s*</tr>", "</tr>", texte)
-    texte = re.sub(r"(?i)</td>\s*<td[^>]*>", " : ", texte)  # cellules d'une même ligne
-    texte = re.sub(r"(?i)</p>|</table>", "\n\n", texte)
-    texte = re.sub(r"(?i)<br\s*/?>|</tr>|</td>", "\n", texte)
-    texte = unescape(strip_tags(texte))
-    lignes = [" ".join(ligne.split()) for ligne in texte.splitlines()]
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(lignes)).strip() + "\n"
-
-
 def notifier_changement_statut(commande_id: int, action: str | None = None) -> None:
     """Envoie à l'acheteur l'email qui correspond à l'action qui vient d'avoir lieu.
 
@@ -393,7 +372,7 @@ def notifier_changement_statut(commande_id: int, action: str | None = None) -> N
         gabarit, sujet = EMAILS[action]
         objet = f"[{commande.code_suivi}] {sujet}"
         corps_html = render_to_string(f"emails/{gabarit}.html", {**_contexte_email(commande), "objet": objet})
-        corps = _html_vers_texte(corps_html)
+        corps = html_vers_texte(corps_html)
     except Exception as exc:
         logger.error("Email non préparé (commande id=%s, %s)", commande_id, type(exc).__name__)
         return

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
@@ -5,6 +6,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from apps.accounts import views as auth
 from apps.catalogue.views import CatalogueView
 from apps.commandes import views as cmd
+from apps.core.admin_securite import connexion_admin_limitee
 from apps.core.views import SanteView
 
 admin.site.site_header = "Polo ESATIC : administration"
@@ -23,6 +25,14 @@ api_v1 = [
     path("auth/rafraichir/", auth.RafraichirView.as_view(), name="auth-rafraichir"),
     path("auth/deconnexion/", auth.DeconnexionView.as_view(), name="auth-deconnexion"),
     path("auth/moi/", auth.MoiView.as_view(), name="auth-moi"),
+    path(
+        "auth/mot-de-passe/oubli/", auth.DemandeReinitialisationView.as_view(), name="auth-mot-de-passe-oubli"
+    ),
+    path(
+        "auth/mot-de-passe/reinitialiser/",
+        auth.ReinitialisationView.as_view(),
+        name="auth-mot-de-passe-reinitialiser",
+    ),
     # Gestion (trésorières / administrateur)
     path("gestion/tableau-de-bord/", cmd.TableauDeBordView.as_view(), name="tableau-de-bord"),
     path("gestion/commandes/", cmd.CommandeListeView.as_view(), name="gestion-commandes"),
@@ -52,8 +62,14 @@ api_v1 = [
 ]
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    # Avant `admin.site.urls` : la connexion à l'admin passe par la limite d'essais.
+    path(f"{settings.ADMIN_URL}login/", connexion_admin_limitee, name="admin-connexion"),
+    path(settings.ADMIN_URL, admin.site.urls),
     path("api/v1/", include(api_v1)),
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
 ]
+
+if settings.API_DOCS:
+    urlpatterns += [
+        path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+        path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
+    ]

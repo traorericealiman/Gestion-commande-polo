@@ -30,6 +30,7 @@ CORS_ALLOWED_ORIGINS=https://polos-esatic.ci
 CSRF_TRUSTED_ORIGINS=https://api.polos-esatic.ci
 FRONTEND_URL=https://polos-esatic.ci
 FRONTEND_ROUTE_SUIVI=/suivi
+FRONTEND_ROUTE_REINITIALISATION=/reinitialiser-mot-de-passe
 
 # Dossier sur le disque persistant, hors de tout dossier servi publiquement
 PRIVATE_MEDIA_ROOT=/var/lib/polo-esatic/captures
@@ -42,10 +43,21 @@ EMAIL_HOST_PASSWORD=<mot de passe>
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=Polos ESATIC <no-reply@polos-esatic.ci>
 
+# Sécurité
+# Nombre de proxys devant l'API : 1 sur une plateforme (Render, Railway, Fly.io)
+# ou derrière un nginx ; 0 si gunicorn reçoit directement les visiteurs.
+NUM_PROXIES=1
+# Adresse secrète de l'administration (ne pas laisser admin/)
+ADMIN_URL=<mot-difficile-a-deviner>/
+
 LOG_LEVEL=INFO
 ```
 
-Avec `DEBUG=False`, le projet active automatiquement : redirection HTTPS, cookies sécurisés, HSTS et pages d'erreur sans détail technique.
+Avec `DEBUG=False`, le projet active automatiquement : redirection HTTPS, cookies sécurisés, HSTS, pages d'erreur sans détail technique, et **Swagger désactivé** (`/api/docs/` et `/api/schema/` répondent 404 ; le front utilise `docs/openapi.yaml`).
+
+**`NUM_PROXIES` doit correspondre à la réalité.** Trop petit (0 derrière un proxy) : tous les visiteurs ont l'adresse du proxy et se bloquent entre eux. Trop grand : un visiteur peut inventer son adresse et contourner les limites d'essais. Pour vérifier après le déploiement : 6 connexions ratées de suite doivent donner `429` à la 6ᵉ, et un autre appareil doit pouvoir se connecter.
+
+**Taille des requêtes** : configurer aussi une taille maximale de requête d'environ 6 Mo au niveau du serveur web ou de la plateforme (ex. `client_max_body_size 6m;` avec nginx). Django vérifie la limite de 5 Mo des captures, mais seulement après avoir reçu le fichier.
 
 ## 3. Commandes de déploiement
 

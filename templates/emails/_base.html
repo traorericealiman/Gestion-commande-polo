@@ -26,13 +26,13 @@
         </tr>
         <tr>
           <td style="padding:20px 24px 8px;font-size:15px;line-height:1.6;">
-            <p style="margin:0 0 14px;">Bonjour {{ commande.prenoms }},</p>
+            <p style="margin:0 0 14px;">{% block salutation %}Bonjour {{ commande.prenoms }},{% endblock %}</p>
             {% block contenu %}{% endblock %}
           </td>
         </tr>
         <tr>
           <td style="padding:16px 24px 20px;border-top:1px solid #e5e7eb;font-size:12px;line-height:1.5;color:#6b7280;">
-            Code de suivi : <strong style="color:#374151;">{{ commande.code_suivi }}</strong><br>
+            {% if commande %}Code de suivi : <strong style="color:#374151;">{{ commande.code_suivi }}</strong><br>{% endif %}
             Ce message est envoyé automatiquement, merci de ne pas y répondre.
           </td>
         </tr>

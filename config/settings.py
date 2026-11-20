@@ -6,6 +6,7 @@ email, domaines autorisés) se lit dans le fichier `.env`.
 Voir `.env.example` pour la liste complète.
 """
 
+import tempfile
 from datetime import timedelta
 from pathlib import Path
 
@@ -105,6 +106,9 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# Durée de validité du lien de réinitialisation du mot de passe envoyé par email.
+PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_MINUTES", default=60) * 60
+
 # --------------------------------------------------------------------------
 # Internationalisation
 # --------------------------------------------------------------------------
@@ -157,8 +161,34 @@ REST_FRAMEWORK = {
         "commande": env("THROTTLE_COMMANDE", default="10/hour"),
         # Consultation du suivi.
         "suivi": env("THROTTLE_SUIVI", default="30/min"),
+        # Demandes et validations de réinitialisation du mot de passe.
+        "mot_de_passe": env("THROTTLE_MOT_DE_PASSE", default="5/hour"),
+        # Connexion à /admin/ (compte administrateur : tous les pouvoirs).
+        "admin": env("THROTTLE_ADMIN", default="5/min"),
     },
+    # Nombre de proxys de confiance devant l'API (celui de l'hébergeur).
+    # 0 : l'adresse IP est celle de la connexion, l'en-tête X-Forwarded-For est ignoré.
+    # 1 : derrière le proxy de l'hébergeur, seule la dernière adresse de l'en-tête
+    #     (ajoutée par ce proxy) compte. Ne jamais laisser vide : sans ce réglage,
+    #     DRF lit tout l'en-tête, que le visiteur peut écrire lui-même pour
+    #     contourner les limites d'essais.
+    "NUM_PROXIES": env.int("NUM_PROXIES", default=0),
     "EXCEPTION_HANDLER": "apps.core.exceptions.gestionnaire_exceptions",
+}
+
+# Compteurs des limites d'essais : stockés dans des fichiers, pour être partagés
+# entre les processus du serveur web (gunicorn en lance plusieurs) et survivre
+# aux redémarrages. Pas en base : les requêtes sont dans une transaction
+# (ATOMIC_REQUESTS) annulée en cas d'erreur, ce qui effacerait le compteur
+# justement lors d'une connexion ratée.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": env("CACHE_DIR", default=str(Path(tempfile.gettempdir()) / "polo-esatic-cache")),
+        # Une entrée par adresse IP et par limite : assez de place pour ne pas
+        # effacer des compteurs en cours.
+        "OPTIONS": {"MAX_ENTRIES": 20000},
+    }
 }
 
 SIMPLE_JWT = {
@@ -191,6 +221,20 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
+# Adresse de l'administration Django. En production, choisir une adresse
+# difficile à deviner (ex. `gestion-7f3k2/`) : `/admin/` est la première
+# adresse qu'un attaquant essaie. Doit se terminer par « / ».
+ADMIN_URL = env("ADMIN_URL", default="admin/")
+if not ADMIN_URL.endswith("/") or ADMIN_URL.startswith("/"):
+    raise ValueError(
+        "ADMIN_URL doit se terminer par « / » et ne pas commencer par « / » (ex. gestion-7f3k2/)."
+    )
+
+# Swagger (/api/docs/) et schéma (/api/schema/) : publics en développement,
+# désactivés en production pour ne pas offrir le plan de l'API. Le front
+# dispose du contrat dans docs/openapi.yaml.
+API_DOCS = env.bool("API_DOCS", default=DEBUG)
+
 # --------------------------------------------------------------------------
 # CORS : seul le front React est autorisé
 # --------------------------------------------------------------------------
@@ -212,6 +256,10 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Polos ESATIC <no-reply@e
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 # Route de la page de suivi côté front (lien des emails : FRONTEND_URL + route + ?code=...).
 FRONTEND_ROUTE_SUIVI = env("FRONTEND_ROUTE_SUIVI", default="/suivi")
+# Page du front où la trésorière choisit un nouveau mot de passe (lien : route + ?uid=...&token=...).
+FRONTEND_ROUTE_REINITIALISATION = env(
+    "FRONTEND_ROUTE_REINITIALISATION", default="/reinitialiser-mot-de-passe"
+)
 
 # --------------------------------------------------------------------------
 # Sécurité en production (activée automatiquement quand DEBUG=False)

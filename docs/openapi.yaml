@@ -71,6 +71,59 @@ paths:
               schema:
                 $ref: '#/components/schemas/Moi'
           description: ''
+  /api/v1/auth/mot-de-passe/oubli/:
+    post:
+      operationId: v1_auth_mot_de_passe_oubli_create
+      description: Répond toujours 204, que l'email corresponde à un compte ou non,
+        pour ne pas révéler quels comptes existent. Le lien envoyé mène à la page
+        de réinitialisation du front (`?uid=...&token=...`).
+      summary: 'Mot de passe oublié : recevoir un lien par email'
+      tags:
+      - Authentification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemandeReinitialisationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DemandeReinitialisationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DemandeReinitialisationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '204':
+          description: Demande prise en compte
+  /api/v1/auth/mot-de-passe/reinitialiser/:
+    post:
+      operationId: v1_auth_mot_de_passe_reinitialiser_create
+      description: '`uid` et `token` viennent du lien reçu par email. 400 si le lien
+        est invalide, expiré ou déjà utilisé (`erreurs.token`), ou si le mot de passe
+        est trop faible (`erreurs.mot_de_passe`). Après succès, toutes les sessions
+        ouvertes sont fermées : il faut se reconnecter.'
+      summary: Choisir un nouveau mot de passe
+      tags:
+      - Authentification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReinitialisationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReinitialisationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReinitialisationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '204':
+          description: Mot de passe modifié
   /api/v1/auth/rafraichir/:
     post:
       operationId: v1_auth_rafraichir_create
@@ -1100,6 +1153,15 @@ components:
           minLength: 1
       required:
       - refresh
+    DemandeReinitialisationRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - email
     Disponibilite:
       type: object
       properties:
@@ -1313,6 +1375,23 @@ components:
         note_interne:
           type: string
           maxLength: 5000
+    ReinitialisationRequest:
+      type: object
+      properties:
+        uid:
+          type: string
+          minLength: 1
+        token:
+          type: string
+          minLength: 1
+        mot_de_passe:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - mot_de_passe
+      - token
+      - uid
     RenvoiCaptureRequest:
       type: object
       description: Corps de POST /api/v1/suivi/capture/ (multipart/form-data).

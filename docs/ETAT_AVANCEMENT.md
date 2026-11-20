@@ -1,9 +1,9 @@
 # État d'avancement du back-end
 
-> Dernière mise à jour : **19 novembre 2026**
+> Dernière mise à jour : **20 novembre 2026**
 > À lire avant de prendre une tâche. Mettez ce fichier à jour dans votre Pull Request quand vous terminez quelque chose.
 
-Ce document dit **ce qui est déjà fait**, **ce qui reste à faire** et, pour chaque chantier restant, **comment le faire** : fichiers à toucher, règles à respecter, pièges connus. Il ne dit pas *qui* fait quoi : la répartition est gérée à part.
+Ce document dit **ce qui est déjà fait**, **ce qui reste à faire** et les décisions prises. Il ne dit pas *qui* fait quoi : la répartition est gérée à part.
 
 Pour installer le projet, lisez le [README](../README.md). Pour les branches, commits et Pull Requests, lisez [CONTRIBUTING.md](../CONTRIBUTING.md).
 
@@ -18,6 +18,7 @@ Pour installer le projet, lisez le [README](../README.md). Pour les branches, co
 | Cycle de vie des commandes (statuts, transitions, historique) | ✅ Fait et testé |
 | Contrat d'API complet (Swagger + `docs/openapi.yaml`) | ✅ Fait |
 | Authentification des trésorières (JWT) | ✅ Fait et testé |
+| Mot de passe oublié (réinitialisation par email) | ✅ Fait et testé |
 | Catalogue public | ✅ Fait et testé |
 | Liste des commandes + 6 actions de gestion | ✅ Fait et testé |
 | Passer une commande | ✅ Fait et testé |
@@ -29,7 +30,7 @@ Pour installer le projet, lisez le [README](../README.md). Pour les branches, co
 | Export CSV | ✅ Fait et testé |
 | Emails automatiques | ✅ Fait et testé (texte + HTML) |
 | Clôture automatique après 7 jours | ✅ Fait et testé |
-| Mise en production | 🟡 Prête ([DEPLOIEMENT.md](DEPLOIEMENT.md)) : reste à choisir l'hébergeur |
+| Mise en production | 🟡 Code prêt ([DEPLOIEMENT.md](DEPLOIEMENT.md)) : reste l'hébergeur, le `.env` de production et le déploiement |
 
 **Plus aucun endpoint ne renvoie `501`.** Tout le contrat d'API visible dans Swagger est codé et testé.
 
@@ -40,15 +41,18 @@ Pour installer le projet, lisez le [README](../README.md). Pour les branches, co
 ### 2.1 Socle technique
 - Django 6.1, Django REST Framework, configuration lue dans `.env` ([config/settings.py](../config/settings.py)).
 - PostgreSQL. La base de dev s'appelle `polo_esatic`, l'utilisateur `polo`. Docker est en option.
-- Documentation interactive sur `/api/docs/`, contrat exporté dans [docs/openapi.yaml](openapi.yaml).
+- Documentation interactive sur `/api/docs/` (en développement seulement, voir 2.5), contrat exporté dans [docs/openapi.yaml](openapi.yaml).
 - Format d'erreur unique pour toute l'API : `{detail, code, erreurs?}` ([apps/core/exceptions.py](../apps/core/exceptions.py)). Une erreur inattendue renvoie un message générique, et le détail technique part dans les logs serveur.
 - Limitation du nombre de requêtes :
   - connexion : 5 par minute ;
   - envoi de commande : 10 par heure ;
-  - suivi : 30 par minute.
+  - suivi : 30 par minute ;
+  - mot de passe oublié et réinitialisation : 5 par heure ;
+  - connexion à l'admin Django : 5 par minute.
 
-  Les seuils se règlent dans le `.env`.
+  Les seuils se règlent dans le `.env`. Le visiteur est identifié par son adresse IP réelle (`NUM_PROXIES`, voir 2.5) et les compteurs sont partagés entre les processus du serveur (cache fichier).
 - Linter `ruff`, CI GitHub Actions (lint, migrations, schéma, tests), modèle de Pull Request.
+- Production : `gunicorn` (serveur web), `whitenoise` (fichiers statiques de `/admin/` et Swagger), `check --deploy` sans problème.
 
 ### 2.2 Données ([models.py](../apps/commandes/models.py), [catalogue/models.py](../apps/catalogue/models.py), [accounts/models.py](../apps/accounts/models.py))
 
@@ -65,7 +69,7 @@ Pour installer le projet, lisez le [README](../README.md). Pour les branches, co
 | `Capture` | Fichier **privé**, empreinte SHA-256, type, taille. Plusieurs par commande possibles ; `commande.capture_actuelle` = la plus récente. |
 | `Evenement` | Historique : action, statut avant et après, auteur (vide = acheteur ou système), motif, commentaire, date. |
 
-L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et comptes des trésorières dans **`/admin/`** (interface Django). Aucun endpoint n'est prévu pour ça.
+L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et comptes des trésorières dans **l'admin Django** (`/admin/` en local, adresse secrète `ADMIN_URL` en production). Aucun endpoint n'est prévu pour ça.
 
 ### 2.3 Cycle de vie : la pièce centrale
 - [apps/commandes/statuts.py](../apps/commandes/statuts.py) : les 7 statuts, les actions, les motifs de refus, et la table `TRANSITIONS` (quelle action, depuis quel statut, vers quel statut, par qui, motif obligatoire ou non).
@@ -75,7 +79,7 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
   - à la validation, **bloque si le stock est insuffisant** (erreur 409 `stock_insuffisant`) ;
   - met à jour les dates (décision, remise, remis par) ;
   - écrit l'`Evenement` dans l'historique ;
-  - appelle `notifier_changement_statut(commande_id, action)` après l'enregistrement, qui envoie l'email à l'acheteur (voir chantier 8).
+  - appelle `notifier_changement_statut(commande_id, action)` après l'enregistrement, qui envoie l'email à l'acheteur (voir 2.7).
 - `generer_code_suivi(commande)` → `POLO-2026-0042` (basé sur l'id ; à appeler **après** le premier `save()`).
 - `catalogue/services.py` → `prix_unitaire(...)` et `quantite_restante(...)`. Seules les commandes **validées, disponibles ou remises** consomment du stock.
 
@@ -86,6 +90,8 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
 | `GET catalogue/` | Tout pour le formulaire : tarifs, choix possibles, disponibilités, numéros de dépôt actifs, ventes ouvertes ou non |
 | `POST auth/connexion/` | Email + mot de passe → jetons `access` (30 min) et `refresh` (8 h). Même message d'erreur que l'email ou le mot de passe soit faux. |
 | `POST auth/rafraichir/` · `POST auth/deconnexion/` · `GET auth/moi/` | Renouveler, invalider, profil |
+| `POST auth/mot-de-passe/oubli/` | `{email}` → toujours `204`, que le compte existe ou non (rien n'est révélé). Si un compte actif correspond, email avec le lien `FRONTEND_URL` + `FRONTEND_ROUTE_REINITIALISATION` + `?uid=...&token=...`. Logique dans `apps/accounts/services.py`. |
+| `POST auth/mot-de-passe/reinitialiser/` | `{uid, token, mot_de_passe}` → `204`. Jeton Django : **une seule utilisation**, valable `PASSWORD_RESET_MINUTES` (60 par défaut). 400 `erreurs.token` si le lien est invalide, expiré ou déjà utilisé ; 400 `erreurs.mot_de_passe` si trop faible. Toutes les sessions ouvertes sont fermées (jetons `refresh` en liste noire). |
 | `GET gestion/commandes/` | Liste paginée par 25. Les commandes en attente en premier. Filtres et recherche : voir README. |
 | `POST gestion/commandes/{id}/valider/`, `refuser/`, `demander-complement/`, `marquer-disponible/`, `marquer-remis/`, `annuler-decision/` | Les 6 actions, toutes via `appliquer_transition`. Réponse `204`. |
 | `POST commandes/` | Passer une commande : ventes ouvertes, quantité max et stock par variante (lignes identiques additionnées), prix calculés par le serveur, capture avec empreinte, code de suivi, historique `SOUMETTRE`, accusé de réception via `on_commit`. Logique dans `services.creer_commande` ; `services.enregistrer_capture` est réutilisable pour le renvoi de capture. |
@@ -96,7 +102,7 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
 | `GET gestion/commandes/{id}/capture/` | Fichier de la capture actuelle (`FileResponse`), réservé aux gestionnaires ; 404 si aucune capture ou fichier disparu ; accès journalisé (ids uniquement). |
 | `GET gestion/tableau-de-bord/` | Compteurs par statut, montant encaissé (validées, disponibles, remises), montant en attente, stock par combinaison (demandé, validé, remis, restant). Agrégats SQL, nombre de requêtes constant. Logique dans `services.tableau_de_bord`. |
 | `GET gestion/commandes/export/` | CSV, une ligne par polo. **Mêmes filtres, recherche et tri que la liste** (`CommandesGestionMixin` partagé). Séparateur `;` + BOM UTF-8 pour Excel, injection de formule neutralisée, export journalisé. |
-| `GET sante/` | État de l'API et de la base |
+| `GET sante/` | État de l'API et de la base (503 si la base ne répond pas) |
 
 **Clôture automatique** : `python manage.py cloturer_commandes` clôture les commandes `A_CORRIGER` dont la décision a plus de `delai_correction_jours` (7 par défaut), via `appliquer_transition` (historique + email). Une erreur sur une commande n'arrête pas les autres. À planifier une fois par jour (voir [DEPLOIEMENT.md](DEPLOIEMENT.md)).
 
@@ -108,166 +114,42 @@ L'administrateur gère tarifs, stocks, numéros de dépôt, paramètres et compt
 - Captures stockées dans un dossier privé (`PRIVATE_MEDIA_ROOT`), **jamais servi publiquement**.
 - Mots de passe : 10 caractères minimum, mots de passe trop courants refusés.
 - En production (`DEBUG=False`) : HTTPS forcé, cookies sécurisés, HSTS.
+- **Limites d'essais impossibles à contourner** : l'adresse IP du visiteur ne se lit pas dans l'en-tête `X-Forwarded-For` qu'il peut inventer. `NUM_PROXIES` (0 en local, 1 derrière le proxy de l'hébergeur) dit combien de proxys croire. Les compteurs sont dans un cache fichier partagé par les processus gunicorn (pas en base : la transaction de la requête, annulée en cas d'erreur, effacerait le compteur d'une connexion ratée).
+- **Admin Django protégé** : connexion limitée à 5 essais par minute ([apps/core/admin_securite.py](../apps/core/admin_securite.py)), adresse secrète en production (`ADMIN_URL`). Les trésorières n'y ont pas accès (`is_staff` faux).
+- **Swagger et schéma désactivés en production** (`API_DOCS`, vrai par défaut seulement si `DEBUG=True`) : le plan de l'API n'est pas offert. Le front utilise `docs/openapi.yaml`.
+- Tests dans [apps/core/test_securite.py](../apps/core/test_securite.py).
 
 ### 2.6 Tests
-120 tests, tous verts. Ils couvrent les transitions, les rôles, le stock, l'API (connexion, liste, actions, erreurs), la validation des captures, la création de commande (`tests/test_creation.py`), le suivi (`tests/test_suivi.py`), le renvoi de capture (`tests/test_renvoi_capture.py`) et les emails (`tests/test_emails.py`), le téléchargement de la capture (`tests/test_capture.py`), la fiche (`tests/test_fiche.py`), le tableau de bord (`tests/test_tableau_de_bord.py`), l'export (`tests/test_export.py`) et la clôture automatique (`tests/test_cloture.py`). Les fabriques réutilisables sont dans [apps/commandes/tests/fabriques.py](../apps/commandes/tests/fabriques.py) : `creer_commande()`, `creer_tresoriere()`, `creer_admin()`, `fichier_png()`. `tests/stockage.py` (`StockageTemporaireMixin`) écrit les captures de test dans un dossier temporaire.
+138 tests, tous verts. Ils couvrent les transitions, les rôles, le stock, l'API (connexion, liste, actions, erreurs), la validation des captures, la création de commande (`tests/test_creation.py`), le suivi (`tests/test_suivi.py`), le renvoi de capture (`tests/test_renvoi_capture.py`) et les emails (`tests/test_emails.py`), le téléchargement de la capture (`tests/test_capture.py`), la fiche (`tests/test_fiche.py`), le tableau de bord (`tests/test_tableau_de_bord.py`), l'export (`tests/test_export.py`), la clôture automatique (`tests/test_cloture.py`), la réinitialisation du mot de passe (`apps/accounts/tests/test_mot_de_passe.py`) et les protections contre les abus (`apps/core/test_securite.py`). Les fabriques réutilisables sont dans [apps/commandes/tests/fabriques.py](../apps/commandes/tests/fabriques.py) : `creer_commande()`, `creer_tresoriere()`, `creer_admin()`, `fichier_png()`. `tests/stockage.py` (`StockageTemporaireMixin`) écrit les captures de test dans un dossier temporaire.
+
+### 2.7 Emails : comment ils fonctionnent
+- `notifier_changement_statut(commande_id, action)` dans `services.py` choisit l'email d'après **l'action** qui vient d'avoir lieu (table `EMAILS`), pas d'après le statut : `EN_ATTENTE` peut venir d'une création, d'un renvoi de capture ou d'une annulation. Sans `action`, elle lit le dernier `Evenement`.
+- 9 emails aux acheteurs : accusé de réception, nouvelle capture reçue, complément demandé, commande validée, polo disponible, polos remis, commande refusée, commande clôturée, décision annulée. L'objet contient toujours le code de suivi : `[POLO-2026-0042] ...`.
+- 1 email aux gestionnaires : réinitialisation du mot de passe (`reinitialisation_mot_de_passe.html`, envoyé par `apps/accounts/services.py`).
+- **Modifier un email = modifier uniquement son fichier `templates/emails/<gabarit>.html`.** La version texte (envoyée avec le HTML pour les messageries qui ne l'affichent pas et pour limiter le classement en spam) est déduite automatiquement par `html_vers_texte` ([apps/core/emails.py](../apps/core/emails.py)) : deux cellules d'une même ligne de tableau deviennent « gauche : droite », un bouton devient « texte : lien ».
+- Base commune `_base.html` (en-tête, bandeau de couleur, bloc `salutation`, pied avec le code de suivi s'il y a une commande) et blocs `_recapitulatif.html`, `_bouton.html`, `_encadre.html`. Styles en ligne et mise en page en tableaux (Gmail / Outlook), 560 px max, lisible sur mobile. Le commentaire de la trésorière est échappé.
+- 3 essais d'envoi (pause de 1 puis 2 s), puis `logger.error` avec l'id de la commande seulement. Une erreur d'email ne fait jamais échouer la requête.
+- Lien de suivi : `FRONTEND_URL` + `FRONTEND_ROUTE_SUIVI` (`/suivi` par défaut) + `?code=POLO-...`. L'email de l'acheteur n'est jamais mis dans l'URL.
+- En local, les emails s'affichent dans le terminal (`EMAIL_BACKEND` console).
 
 ---
 
 ## 3. Ce qui reste à faire
 
-Chaque chantier indique les fichiers concernés, les étapes et le **critère de fin**. Les numéros ne sont pas un ordre imposé. Le chantier 1 est cependant celui dont dépendent le plus les autres : sans commande créée, pas de suivi ni de fiche à tester de bout en bout.
+**Le code est terminé.** Tout ce qui reste concerne la mise en ligne et le travail avec le front. Le guide pas à pas est dans [DEPLOIEMENT.md](DEPLOIEMENT.md).
 
-### Chantier 1 · `POST /api/v1/commandes/` : passer une commande
-**Fichier** : `CommandeCreationView` dans [apps/commandes/views.py](../apps/commandes/views.py). La logique va dans une fonction `creer_commande(...)` de `services.py`.
-**Entrée** : `CommandeCreationSerializer`, déjà écrit, qui valide déjà les formats, les deux emails identiques, la case cochée et la capture. Format `multipart/form-data` ; `lignes` arrive comme **chaîne JSON**.
-
-Étapes, dans une transaction :
-1. Si `ParametresVente.charger().ventes_ouvertes` est faux → `raise VentesFermees()` (403).
-2. Pour chaque ligne :
-   - `quantite` ≤ `parametres.quantite_max_par_ligne`, sinon erreur 400 ;
-   - `quantite_restante(...)` vaut `None` (pas de limite) ou est ≥ la quantité demandée, sinon erreur 400 « taille épuisée ».
-3. Prix : `prix_unitaire(modele, version, manches)` pour chaque ligne. **Ne jamais lire un prix envoyé par le client.** `montant_total` = somme des `prix_unitaire × quantite`.
-4. Créer `Commande` (email en minuscules), puis `code_suivi = generer_code_suivi(commande)` et `save(update_fields=["code_suivi"])`.
-5. Créer les `LigneCommande` et le `Paiement`.
-6. Créer la `Capture`. Renseigner `empreinte` **avant** d'enregistrer le fichier, car le chemin du fichier en dépend :
-   - `empreinte = empreinte_sha256(fichier)` ;
-   - `type_mime = detecter_type(fichier)` ;
-   - `taille_octets = fichier.size`.
-7. Créer l'`Evenement` (`action=SOUMETTRE`, `statut_avant=""`, `statut_apres=EN_ATTENTE`, `auteur=None`).
-8. `transaction.on_commit(lambda: notifier_changement_statut(commande.pk))` : c'est l'accusé de réception.
-9. Répondre `201` avec `CommandeCreeeSerializer` (`code_suivi`, `statut`, `montant_total`).
-
-⚠️ **Une capture déjà utilisée ne bloque pas l'envoi.** Le cahier des charges demande de *prévenir la trésorière*, ce qui se fait par une alerte sur la fiche (chantier 4).
-**Fini quand** : une commande à plusieurs lignes est créée avec le bon montant ; ventes fermées → 403 ; taille épuisée → 400 ; capture `.exe` renommée → 400 ; tests écrits.
-
-### Chantier 2 · `POST /api/v1/suivi/` : suivre sa commande
-**Fichier** : `SuiviView`. **Entrée** : `SuiviRequeteSerializer` (`code_suivi` + `email`). **Sortie** : `SuiviSerializer`.
-1. Chercher la commande avec `code_suivi__iexact` **et** `email__iexact`. Si rien ne correspond → 404 avec un message générique (« Commande introuvable »). Ne jamais dire lequel des deux est faux.
-2. Construire la réponse :
-   - `statut_libelle` = `commande.get_statut_display()` ;
-   - `motif_libelle` = `commande.get_motif_display()` ;
-   - `retrait` = `{lieu, horaires, contact}` tirés de `ParametresVente` **seulement si** le statut est `POLO_DISPONIBLE`, sinon `null` ;
-   - `peut_renvoyer_capture` = statut `A_CORRIGER`.
-
-✅ Le test `test_endpoints_a_faire_renvoient_501` a été supprimé et remplacé par `tests/test_suivi.py`.
-**Fini quand** : bon couple → 200 ; mauvais email → 404 ; retrait visible seulement au statut `POLO_DISPONIBLE`.
-
-### Chantier 3 · `POST /api/v1/suivi/capture/` : renvoyer une capture
-**Fichier** : `RenvoiCaptureView`. **Entrée** : `RenvoiCaptureSerializer` (code, email, capture, référence facultative).
-1. Même recherche que le chantier 2 (404 générique).
-2. Si le statut n'est pas `A_CORRIGER` → `raise TransitionInterdite()` (409).
-3. Créer une nouvelle `Capture` (même méthode qu'au chantier 1, étape 6). Mettre à jour `paiement.reference_transaction` si elle est fournie.
-4. `appliquer_transition(commande, Action.RENVOYER_CAPTURE)` (sans auteur : c'est l'acheteur). La commande repasse `EN_ATTENTE`.
-5. Répondre avec `SuiviSerializer`.
-
-**Fini quand** : renvoi accepté au statut `A_CORRIGER`, 409 sinon ; l'ancienne capture est conservée.
-
-### Chantier 4 · `GET` et `PATCH /api/v1/gestion/commandes/{id}/` : fiche d'une commande ✅ Fait
-**Fichier** : `CommandeDetailView`. **Sortie** : `CommandeDetailSerializer`.
-- Charger la commande avec `select_related("paiement")` et `prefetch_related("lignes", "captures", "evenements__auteur")`, pour éviter des dizaines de requêtes.
-- `capture` : informations de `commande.capture_actuelle` + `url_telechargement` = `/api/v1/gestion/commandes/{id}/capture/`. Le modèle n'a pas ce champ : il faut le construire, par exemple avec un `SerializerMethodField` ou un dict.
-- `alertes` (liste vide s'il n'y a rien), chacune avec `code`, `message` et `commandes_liees` (codes de suivi) :
-  - `CAPTURE_DEJA_UTILISEE` : une `Capture` d'une **autre** commande a la même `empreinte` ;
-  - `REFERENCE_DEJA_UTILISEE` : un `Paiement` d'une autre commande a la même `reference_transaction` (non vide) ;
-  - `STOCK_INSUFFISANT` : seulement si le statut est `EN_ATTENTE` et qu'une ligne dépasse `quantite_restante`.
-- `autres_commandes_meme_email` : codes de suivi des autres commandes du même email.
-- `actions_possibles` : `actions_possibles(commande.statut)` de `statuts.py`, **en retirant `ANNULER_DECISION` si l'utilisateur n'est pas admin**.
-- `PATCH` : entrée `NoteInterneSerializer`, ne modifie **que** `note_interne`, renvoie la fiche.
-
-**Fini quand** : les 3 alertes sont testées ; une trésorière ne voit pas `ANNULER_DECISION`.
-
-### Chantier 5 · `GET /api/v1/gestion/commandes/{id}/capture/` : télécharger la capture ✅ Fait
-**Fichier** : `CaptureTelechargementView`.
-- `capture = commande.capture_actuelle` ; s'il n'y en a pas → 404.
-- Renvoyer `FileResponse(capture.fichier.open("rb"), content_type=capture.type_mime)`. `capture.fichier.url` **ne fonctionne pas** volontairement, car le stockage est privé.
-- Journaliser l'accès : `logger.info("Capture consultée : commande %s par utilisateur %s", commande.pk, request.user.pk)`. Uniquement des identifiants, pas d'email ni de nom.
-
-**Fini quand** : une trésorière connectée reçoit le fichier, un visiteur non connecté reçoit 401.
-
-### Chantier 6 · `GET /api/v1/gestion/tableau-de-bord/` : tableau de bord ✅ Fait
-**Fichier** : `TableauDeBordView`. **Sortie** : `TableauDeBordSerializer`.
-- `compteurs` : nombre de commandes par statut. Une seule requête : `values("statut").annotate(n=Count("id"))`. Mettre 0 pour les statuts absents.
-- `montant_encaisse` : somme de `montant_total` des statuts de `STATUTS_CONSOMMANT_STOCK`.
-- `montant_en_attente` : somme de `montant_total` des commandes `EN_ATTENTE`.
-- `stocks` : une entrée par combinaison modèle × version × manches × taille qui a un `Stock` **ou** au moins une ligne commandée.
-  - `demande` : quantités hors commandes `REFUSEE` et `CLOTUREE` ;
-  - `valide` : quantités des statuts de `STATUTS_CONSOMMANT_STOCK` ;
-  - `remis` : quantités des commandes `REMIS` ;
-  - `restant` : résultat de `quantite_restante` (`null` = pas de limite).
-
-  Calculer avec des agrégats (`Sum` + `filter=Q(...)`), pas une requête par combinaison.
-
-**Fini quand** : les chiffres sont justes sur un jeu de test avec des commandes dans plusieurs statuts.
-
-### Chantier 7 · `GET /api/v1/gestion/commandes/export/` : export CSV ✅ Fait
-**Fichier** : `ExportView`.
-- Réutiliser **les mêmes filtres et la même recherche** que la liste : appliquer `CommandeFilter` et `SearchFilter` sur le même queryset, pour que le fichier corresponde à ce que la trésorière voit à l'écran.
-- **Une ligne par polo commandé** (`LigneCommande`). Colonnes :
-  - code de suivi, nom, prénoms, email ;
-  - modèle, version, manches, taille, quantité, prix unitaire, prix de la ligne ;
-  - montant total de la commande ;
-  - moyen de paiement, numéro d'envoi, référence ;
-  - statut, date.
-- Pour qu'Excel en français ouvre le fichier correctement : encodage `utf-8-sig`, séparateur `;`. Réponse `HttpResponse(content_type="text/csv")` avec `Content-Disposition: attachment; filename="commandes.csv"`.
-- Journaliser l'export (id de l'utilisateur et nombre de lignes).
-
-**Fini quand** : le fichier s'ouvre proprement dans Excel ; le filtre `statut=VALIDEE` est respecté.
-
-### Chantier 8 · Emails automatiques ✅ Fait
-
-**Ce qui a été fait** :
-- `notifier_changement_statut(commande_id, action)` dans `services.py` choisit l'email d'après **l'action** qui vient d'avoir lieu (table `EMAILS`), pas d'après le statut : `EN_ATTENTE` peut venir d'une création, d'un renvoi de capture ou d'une annulation. Sans `action`, elle lit le dernier `Evenement`.
-- Un seul gabarit HTML par email (`templates/emails/<gabarit>.html`). La version texte, envoyée avec le HTML pour les messageries qui ne l'affichent pas (et pour limiter le classement en spam), est **déduite automatiquement** du HTML par `services._html_vers_texte`. Objet : `[POLO-2026-0042] ...`.
-- HTML : base commune `_base.html` (en-tête, bandeau de couleur selon l'email, pied avec le code de suivi), blocs `_recapitulatif.html`, `_bouton.html`, `_encadre.html`. Styles en ligne et mise en page en tableaux (compatibles Gmail / Outlook), largeur 560 px max, lisible sur mobile. Le commentaire de la trésorière est échappé (pas d'injection HTML).
-- **Modifier un email = modifier uniquement son fichier `.html`.** Dans un tableau, deux cellules d'une même ligne deviennent « gauche : droite » dans la version texte, et un bouton devient « texte : lien ».
-- 3 essais d'envoi (pause de 1 puis 2 s), puis `logger.error` avec l'id de la commande seulement. Une erreur d'email ne fait jamais échouer la requête.
-- Lien de suivi : `FRONTEND_URL` + `FRONTEND_ROUTE_SUIVI` (nouveau réglage, `/suivi` par défaut) + `?code=POLO-...`. L'email de l'acheteur n'est jamais mis dans l'URL.
-- **Décision (Roméo, 19/11)** : `ANNULER_DECISION` **prévient l'acheteur** (gabarit `decision_annulee.html`) : sa commande repasse en attente de vérification, il doit le voir.
-
-Le cahier des charges initial :
-
-| Statut atteint | Email | Contenu essentiel |
+| # | Tâche | Détail |
 |---|---|---|
-| `EN_ATTENTE` (création) | Accusé de réception | Récapitulatif des polos, montant, code de suivi, lien de suivi |
-| `EN_ATTENTE` (après renvoi de capture) | Nouvelle capture reçue | Court message de confirmation |
-| `A_CORRIGER` | Complément demandé | Motif, commentaire, lien de suivi, date limite (date + délai de `ParametresVente`) |
-| `VALIDEE` | Commande validée | Paiement confirmé, récapitulatif |
-| `POLO_DISPONIBLE` | Polo disponible | Lieu, horaires, contact de retrait, code à présenter |
-| `REMIS` | Polos remis | Confirmation, remerciement |
-| `REFUSEE` | Commande refusée | Motif, commentaire, marche à suivre |
-| `CLOTUREE` | Clôture | Raison, comment recommander |
-| `EN_ATTENTE` (après annulation d'une décision par l'admin) | Commande en cours de nouvelle vérification | La décision est annulée, rien à faire, un email suivra |
+| 1 | Choisir l'hébergeur du back | Python 3.12+, HTTPS, **disque persistant** pour les captures, tâche planifiée (cron) |
+| 2 | Base de données de production | PostgreSQL (par exemple Supabase) : renseigner `DATABASE_URL` avec `?sslmode=require`. Sur Supabase, prendre le **Session pooler** (port 5432) et **désactiver la Data API** : le back ne s'en sert pas, et elle exposerait les tables via la clé publique |
+| 3 | Serveur d'envoi d'emails (SMTP) | Identifiants à mettre dans le `.env` de production ; sans eux, aucun email ne part |
+| 4 | Créer le `.env` de production | `DEBUG=False`, nouvelle `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, `FRONTEND_URL`, `PRIVATE_MEDIA_ROOT`, SMTP |
+| 5 | Premier déploiement | `check --deploy`, `migrate`, `collectstatic`, `createsuperuser`, puis dans `/admin/` : comptes des trésorières, stocks, numéros de dépôt, paramètres de vente |
+| 6 | Planifier la clôture automatique | `python manage.py cloturer_commandes` une fois par jour |
+| 7 | Test de bout en bout avec le front | Une vraie commande de l'envoi à la remise, en vérifiant chaque email reçu et le lien de suivi |
+| 8 | Après la mise en ligne | Surveillance de `/api/v1/sante/`, sauvegarde quotidienne de la base **et** des captures, un test de restauration |
 
-- **Objet de chaque email : il doit contenir le code de suivi**, car un même email peut avoir plusieurs commandes.
-- Gabarits dans `templates/emails/` (texte, et HTML si le temps le permet). Ils doivent rester lisibles sur mobile.
-- Lien de suivi : `settings.FRONTEND_URL` + la route du front (à convenir avec l'équipe front).
-- En cas d'échec : 3 essais, puis `logger.error` sans l'adresse email en clair.
-- En local, les emails s'affichent dans le terminal (`EMAIL_BACKEND` console).
-
-**Fini quand** : chaque transition produit le bon email (testable avec `django.core.mail.outbox` dans les tests).
-
-### Chantier 9 · Clôture automatique après 7 jours ✅ Fait
-- Créer une commande de gestion `apps/commandes/management/commands/cloturer_commandes.py`.
-- Elle sélectionne les commandes `A_CORRIGER` dont `date_decision` est plus vieille que `ParametresVente.delai_correction_jours`, et appelle `appliquer_transition(commande, Action.CLOTURER)` sur chacune. Une erreur sur une commande ne doit pas arrêter les autres.
-- À lancer une fois par jour sur le serveur (tâche planifiée).
-
-**Fini quand** : `python manage.py cloturer_commandes` clôture les bonnes commandes, avec un test.
-
-### Chantier 10 · Mise en production 🟡 Préparée
-
-**Fait** : `gunicorn` et `whitenoise` ajoutés, `check --deploy` sans problème, guide complet dans [DEPLOIEMENT.md](DEPLOIEMENT.md). **Reste** : choisir l'hébergeur, créer le `.env` de production, déployer.
-
-- Choisir l'hébergeur (back + PostgreSQL), avec HTTPS.
-- Ajouter `gunicorn` (ou équivalent) et `whitenoise` pour les fichiers statiques de `/admin/`.
-- `.env` de production :
-  - `DEBUG=False` ;
-  - vraie `SECRET_KEY` ;
-  - `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` (domaine du front) ;
-  - SMTP réel ;
-  - `PRIVATE_MEDIA_ROOT` sur un disque persistant.
-- Sauvegarde quotidienne de la base **et** des captures, et un test de restauration.
-- Surveiller `/api/v1/sante/` avec un outil de surveillance gratuit.
+**Rappel** : à chaque modification d'un serializer ou d'une route, régénérer `docs/openapi.yaml` (`python manage.py spectacular --file docs/openapi.yaml`) et prévenir le front.
 
 ---
 
@@ -283,6 +165,7 @@ Le cahier des charges initial :
 | Prix | Toujours calculés par le serveur, figés dans la commande | Le client ne peut pas tricher sur le montant |
 | Authentification | JWT : accès 30 min, renouvellement 8 h | Front React séparé ; les sessions expirent |
 | Suppression | Aucune commande ni capture n'est supprimable | Traçabilité |
+| Annulation d'une décision | L'acheteur reçoit un email (`decision_annulee.html`) | Sa commande repasse en vérification, il doit le savoir (Roméo, 19/11) |
 
 ## 5. Questions encore ouvertes
 
@@ -290,7 +173,8 @@ Le cahier des charges initial :
 - **Textes des emails modifiables par l'admin** (cahier §5.5) : pas prévu pour l'instant, les textes sont dans des gabarits. À ajouter seulement si le temps le permet.
 - **Journal d'activité global** (connexions, exports, changements de paramètres) : l'historique par commande existe, pas le journal global.
 - **Durée de conservation des captures** après la fin de la vente : à fixer.
-- **Route du front pour le lien de suivi** dans les emails : `/suivi?code=POLO-...` par défaut. Si le front utilise une autre route, changer `FRONTEND_ROUTE_SUIVI` dans le `.env` (aucun code à modifier).
+- **Route du front pour le lien de suivi** dans les emails : `/suivi?code=POLO-...` par défaut, **à confirmer avec le front**. Si leur route est différente, changer `FRONTEND_ROUTE_SUIVI` dans le `.env` (aucun code à modifier).
+- **Page « nouveau mot de passe » du front** : le lien de l'email mène à `/reinitialiser-mot-de-passe?uid=...&token=...` par défaut. Le front doit créer cette page (lire `uid` et `token` dans l'URL, demander le nouveau mot de passe, appeler `auth/mot-de-passe/reinitialiser/`), ainsi qu'un lien « Mot de passe oublié ? » sur l'écran de connexion. Route à confirmer, réglable avec `FRONTEND_ROUTE_REINITIALISATION`.
 
 ## 6. Points d'attention
 

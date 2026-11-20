@@ -51,6 +51,8 @@ python manage.py runserver
 | http://localhost:8000/admin/ | Administration Django (tarifs, stocks, numéros de dépôt, comptes) |
 | http://localhost:8000/api/v1/sante/ | Vérifie que l'API et la base répondent |
 
+En production (`DEBUG=False`), Swagger est désactivé et l'admin est servi à l'adresse secrète `ADMIN_URL` (voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md)).
+
 > **`psql` introuvable sous Windows ?** Il se trouve dans `C:\Program Files\PostgreSQL\<version>\bin\psql.exe`. Vous pouvez aussi créer l'utilisateur et la base depuis pgAdmin.
 >
 > **Pas de PostgreSQL installé ?** Avec Docker Desktop, `docker compose up -d` lance une base déjà configurée sur le port **5433**. Remplacez alors `5432` par `5433` dans `DATABASE_URL` (fichier `.env`), et sautez l'étape 4.
@@ -141,6 +143,8 @@ Tous préfixés par `/api/v1/`. Le détail des champs se trouve dans Swagger (`/
 | POST | `auth/rafraichir/` | `{refresh}` → nouveaux jetons | ✅ |
 | POST | `auth/deconnexion/` | `{refresh}` → invalide le jeton | ✅ |
 | GET | `auth/moi/` | Profil et rôle de l'utilisateur connecté | ✅ |
+| POST | `auth/mot-de-passe/oubli/` | `{email}` → `204` toujours, lien envoyé par email si le compte existe | ✅ |
+| POST | `auth/mot-de-passe/reinitialiser/` | `{uid, token, mot_de_passe}` (tirés du lien) → `204`, sessions fermées | ✅ |
 
 Il faut envoyer l'en-tête `Authorization: Bearer <access>` sur toutes les routes `gestion/`.
 

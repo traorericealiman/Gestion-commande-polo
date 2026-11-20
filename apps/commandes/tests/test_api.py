@@ -93,8 +93,3 @@ class GestionTests(BaseAPITest):
         reponse = self.client.post(reverse("gestion-valider", args=[commande.pk]))
         self.assertEqual(reponse.status_code, 409)
         self.assertEqual(reponse.data["code"], "transition_interdite")
-
-
-class SchemaTests(BaseAPITest):
-    def test_schema_openapi_se_genere(self):
-        self.assertEqual(self.client.get(reverse("schema")).status_code, 200)

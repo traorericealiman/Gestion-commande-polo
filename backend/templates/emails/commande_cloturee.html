@@ -1,0 +1,10 @@
+{% extends "emails/_base.html" %}
+{% block apercu %}Votre commande a été clôturée faute de complément.{% endblock %}
+{% block fond_bandeau %}#f3f4f6{% endblock %}
+{% block couleur_bandeau %}#4b5563{% endblock %}
+{% block bandeau %}Commande clôturée{% endblock %}
+{% block contenu %}
+<p style="margin:0 0 14px;">Votre commande <strong>{{ commande.code_suivi }}</strong> a été clôturée : nous n'avons pas reçu le complément demandé dans le délai de {{ parametres.delai_correction_jours }} jours.</p>
+<p style="margin:0 0 14px;">Si vous souhaitez toujours un polo, vous pouvez passer une nouvelle commande.</p>
+{% include "emails/_bouton.html" with lien=lien_site texte="Passer une nouvelle commande" %}
+{% endblock %}

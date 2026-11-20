@@ -1,0 +1,8 @@
+{% extends "emails/_base.html" %}
+{% block apercu %}Votre nouvelle capture de paiement a bien été reçue.{% endblock %}
+{% block bandeau %}Nouvelle capture reçue{% endblock %}
+{% block contenu %}
+<p style="margin:0 0 14px;">Nous avons bien reçu votre nouvelle capture de paiement pour la commande <strong>{{ commande.code_suivi }}</strong>.</p>
+<p style="margin:0 0 14px;">Elle va être vérifiée par la trésorière. Vous recevrez un email dès qu'une décision sera prise.</p>
+{% include "emails/_bouton.html" with lien=lien_suivi texte="Suivre ma commande" %}
+{% endblock %}

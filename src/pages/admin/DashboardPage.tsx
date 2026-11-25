@@ -1,163 +1,104 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Loader2, AlertCircle, ArrowRight } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { fetchDashboard, formatPrice } from '@/lib/api'
 import type { TableauDeBord } from '@/types'
-import { STATUT_LABELS } from '@/types'
-import { cn } from '@/lib/utils'
+import OrdersSection from '@/components/admin/OrdersSection'
+import NumerosSection from '@/components/admin/NumerosSection'
+import { useAutoRefresh } from '@/hooks/useAutoRefresh'
 
-const statusOrder = [
-  'EN_ATTENTE',
-  'A_CORRIGER',
-  'VALIDEE',
-  'POLO_DISPONIBLE',
-  'REMIS',
-  'REFUSEE',
-  'CLOTUREE',
+/** Les 8 modèles possibles, dans l'ordre d'affichage. */
+const MODELES = [
+  { modele: 'LICENCE', version: 'SIMPLE', manches: 'COURTES', label: 'Licence simple · manches courtes' },
+  { modele: 'LICENCE', version: 'SIMPLE', manches: 'LONGUES', label: 'Licence simple · manches longues' },
+  { modele: 'LICENCE', version: 'BRODE', manches: 'COURTES', label: 'Licence brodé · manches courtes' },
+  { modele: 'LICENCE', version: 'BRODE', manches: 'LONGUES', label: 'Licence brodé · manches longues' },
+  { modele: 'MASTER', version: 'SIMPLE', manches: 'COURTES', label: 'Master simple · manches courtes' },
+  { modele: 'MASTER', version: 'SIMPLE', manches: 'LONGUES', label: 'Master simple · manches longues' },
+  { modele: 'MASTER', version: 'BRODE', manches: 'COURTES', label: 'Master brodé · manches courtes' },
+  { modele: 'MASTER', version: 'BRODE', manches: 'LONGUES', label: 'Master brodé · manches longues' },
 ]
-
-const statusColors: Record<string, string> = {
-  EN_ATTENTE: 'bg-amber-50 border-amber-200 text-amber-800',
-  A_CORRIGER: 'bg-orange-50 border-orange-200 text-orange-800',
-  VALIDEE: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-  POLO_DISPONIBLE: 'bg-blue-50 border-blue-200 text-blue-800',
-  REMIS: 'bg-slate-50 border-slate-200 text-slate-700',
-  REFUSEE: 'bg-red-50 border-red-200 text-red-700',
-  CLOTUREE: 'bg-slate-50 border-slate-100 text-slate-500',
-}
 
 export default function DashboardPage() {
   const [data, setData] = useState<TableauDeBord | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    fetchDashboard()
-      .then(setData)
+  const load = useCallback(() => {
+    return fetchDashboard()
+      .then((d) => {
+        setData(d)
+        setError(null)
+      })
       .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false))
   }, [])
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
+  useEffect(() => {
+    load()
+  }, [load])
 
-  if (error || !data) {
-    return (
-      <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
-        <AlertCircle className="mb-1 inline h-4 w-4" /> {error || 'Erreur'}
-      </div>
-    )
-  }
+  // Actualisation automatique des chiffres
+  useAutoRefresh(load)
+
+  const c =data?.compteurs ?? {}
+  const total = Object.values(c).reduce((a, b) => a + b, 0)
+  const remis = data?.stocks.reduce((s, x) => s + x.remis, 0) ?? 0
+
+  // Polos commandés par modèle (toutes tailles confondues, hors commandes refusées)
+  const parModele = MODELES.map((m) => ({
+    ...m,
+    n:
+      data?.stocks
+        .filter((s) => s.modele === m.modele && s.version === m.version && s.manches === m.manches)
+        .reduce((a, s) => a + s.demande, 0) ?? 0,
+  }))
+
+  const stats = [
+    { label: 'Montant encaissé', value: data ? formatPrice(data.montant_encaisse) : '—' },
+    { label: 'En attente', value: data ? formatPrice(data.montant_en_attente) : '—', sub: `${c.EN_ATTENTE ?? 0} commande(s)` },
+    { label: 'Commandes', value: data ? String(total) : '—' },
+    { label: 'Polos remis', value: data ? String(remis) : '—' },
+  ]
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-navy">
-            Tableau de bord
-          </h1>
-          <p className="text-sm text-slate-500">Vue d’ensemble des commandes</p>
-        </div>
-        <Link to="/admin/commandes" className="btn-primary !py-2 !text-xs">
-          Voir les commandes
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
+    <div className="space-y-14">
+      <div>
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-navy">Tableau de bord</h1>
+        {error && <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-      {/* Counters */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-        {statusOrder.map((s) => {
-          const count = data.compteurs[s] ?? 0
-          return (
-            <Link
-              key={s}
-              to={`/admin/commandes?statut=${s}`}
-              className={cn(
-                'rounded-xl border p-4 transition hover:shadow-soft',
-                statusColors[s]
-              )}
-            >
-              <p className="text-2xl font-bold">{count}</p>
-              <p className="mt-0.5 text-xs font-medium opacity-80">
-                {STATUT_LABELS[s as keyof typeof STATUT_LABELS] || s}
-              </p>
-            </Link>
-          )
-        })}
-      </div>
+        <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200">
+          <dl className="grid grid-cols-2 gap-px bg-slate-200 lg:grid-cols-4">
+            {stats.map((s) => (
+              <div key={s.label} className="bg-white px-5 py-5">
+                <dt className="text-sm text-slate-500">{s.label}</dt>
+                <dd className="mt-1 font-display text-2xl font-bold text-navy">{s.value}</dd>
+                {s.sub && <dd className="text-xs text-slate-400">{s.sub}</dd>}
+              </div>
+            ))}
+          </dl>
 
-      {/* Money */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="card">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            Montant encaissé
+          <p className="border-t border-slate-200 bg-slate-50 px-5 py-2.5 text-xs font-medium text-slate-500">
+            Polos commandés par modèle
           </p>
-          <p className="mt-1 font-display text-2xl font-bold text-emerald-700">
-            {formatPrice(data.montant_encaisse)}
-          </p>
-          <p className="mt-1 text-xs text-slate-400">
-            Validées + disponibles + remises
-          </p>
-        </div>
-        <div className="card">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            En attente de vérification
-          </p>
-          <p className="mt-1 font-display text-2xl font-bold text-amber-700">
-            {formatPrice(data.montant_en_attente)}
-          </p>
+          <dl className="grid grid-cols-2 gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-4">
+            {parModele.map((m) => (
+              <div key={m.label} className="bg-white px-5 py-4">
+                <dt className="text-sm text-slate-500">{m.label}</dt>
+                <dd
+                  className={
+                    m.n > 0
+                      ? 'mt-1 font-display text-xl font-bold text-navy'
+                      : 'mt-1 font-display text-xl font-bold text-slate-300'
+                  }
+                >
+                  {data ? m.n : '—'}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </div>
 
-      {/* Stocks */}
-      {data.stocks.length > 0 && (
-        <div className="card overflow-hidden !p-0">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h2 className="font-semibold text-navy">Stocks par variante</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Variante</th>
-                  <th className="px-4 py-3 font-medium">Taille</th>
-                  <th className="px-4 py-3 font-medium text-right">Demandé</th>
-                  <th className="px-4 py-3 font-medium text-right">Validé</th>
-                  <th className="px-4 py-3 font-medium text-right">Remis</th>
-                  <th className="px-4 py-3 font-medium text-right">Restant</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.stocks.map((s, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50">
-                    <td className="px-4 py-2.5">
-                      {s.modele} · {s.version} · {s.manches}
-                    </td>
-                    <td className="px-4 py-2.5 font-medium">{s.taille}</td>
-                    <td className="px-4 py-2.5 text-right">{s.demande}</td>
-                    <td className="px-4 py-2.5 text-right">{s.valide}</td>
-                    <td className="px-4 py-2.5 text-right">{s.remis}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      {s.restant === null ? (
-                        <span className="text-slate-400">∞</span>
-                      ) : s.restant === 0 ? (
-                        <span className="font-medium text-red-600">0</span>
-                      ) : (
-                        s.restant
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      <OrdersSection counters={c} onChanged={load} />
+
+      <NumerosSection />
     </div>
   )
 }

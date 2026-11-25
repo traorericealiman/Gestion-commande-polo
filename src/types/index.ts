@@ -57,6 +57,18 @@ export interface NumeroDepot {
   titulaire: string
 }
 
+export interface NumeroDepotGestion {
+  id: number
+  moyen: MoyenPaiement
+  moyen_libelle: string
+  numero: string
+  titulaire: string
+  actif: boolean
+  date_creation: string
+  date_modification: string
+  modifie_par: string | null
+}
+
 export interface Catalogue {
   ventes_ouvertes: boolean
   date_ouverture: string | null

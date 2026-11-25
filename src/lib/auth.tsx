@@ -14,6 +14,7 @@ import {
   getAccessToken,
   setTokens,
   clearTokens,
+  AUTH_EXPIRED_EVENT,
 } from './api'
 import type { User } from '@/types'
 
@@ -51,6 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadUser()
   }, [loadUser])
+
+  // Session expirée pendant l'utilisation : retour à l'écran de connexion
+  useEffect(() => {
+    const onExpired = () => setUser(null)
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
+  }, [])
 
   const login = useCallback(async (email: string, password: string) => {
     const tokens = await apiLogin(email, password)

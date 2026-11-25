@@ -8,6 +8,7 @@ import type {
   PaginatedCommandes,
   CommandeDetail,
   DecisionPayload,
+  NumeroDepotGestion,
 } from '@/types'
 
 export const API_BASE =
@@ -25,9 +26,10 @@ export function getRefreshToken(): string | null {
   return localStorage.getItem(REFRESH_KEY)
 }
 
-export function setTokens(tokens: AuthTokens) {
+export function setTokens(tokens: Partial<AuthTokens> & { access: string }) {
   localStorage.setItem(TOKEN_KEY, tokens.access)
-  localStorage.setItem(REFRESH_KEY, tokens.refresh)
+  // Le rafraîchissement peut ne renvoyer que "access" : on garde alors l'ancien refresh
+  if (tokens.refresh) localStorage.setItem(REFRESH_KEY, tokens.refresh)
 }
 
 export function clearTokens() {
@@ -70,17 +72,27 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
 
   let res = await fetch(url, { ...options, headers })
 
-  if (res.status === 401 && getRefreshToken()) {
-    try {
-      const refreshed = await refreshToken()
-      setTokens(refreshed)
-      headers.set('Authorization', `Bearer ${refreshed.access}`)
-      res = await fetch(url, { ...options, headers })
-    } catch {
-      clearTokens()
+  if (res.status === 401) {
+    if (getRefreshToken()) {
+      try {
+        const refreshed = await refreshToken()
+        setTokens(refreshed)
+        headers.set('Authorization', `Bearer ${refreshed.access}`)
+        res = await fetch(url, { ...options, headers })
+      } catch {
+        /* rafraîchissement impossible : traité juste en dessous */
+      }
     }
+    if (res.status === 401) expireSession()
   }
   return res
+}
+
+/** Session expirée : on efface les jetons et on prévient l'application (retour à la connexion). */
+export const AUTH_EXPIRED_EVENT = 'a2e:auth-expired'
+function expireSession() {
+  clearTokens()
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
 }
 
 /* ——— Public ——— */
@@ -242,7 +254,9 @@ export async function updateNoteInterne(
     method: 'PATCH',
     body: JSON.stringify({ note_interne }),
   })
-  return handleResponse<CommandeDetail>(res)
+  // La réponse peut ne contenir que la note : on relit la commande complète
+  await handleResponse<unknown>(res)
+  return fetchCommande(id)
 }
 
 async function postAction(
@@ -257,7 +271,9 @@ async function postAction(
       body: body ? JSON.stringify(body) : undefined,
     }
   )
-  return handleResponse<CommandeDetail>(res)
+  // L'API répond 204 (sans contenu) : on relit la commande à jour
+  await handleResponse<unknown>(res)
+  return fetchCommande(id)
 }
 
 export const validerCommande = (id: number) => postAction(id, 'valider')
@@ -291,6 +307,40 @@ export async function exportCommandes(filters: CommandeFilters = {}): Promise<Bl
   )
   if (!res.ok) throw new Error('Export impossible')
   return res.blob()
+}
+
+/* ——— Numéros de dépôt (configurés par les trésorières) ——— */
+
+export async function fetchNumerosDepot(): Promise<NumeroDepotGestion[]> {
+  const res = await authFetch(`${API_BASE}/api/v1/gestion/numeros-depot/`)
+  const data = await handleResponse<NumeroDepotGestion[] | { results: NumeroDepotGestion[] }>(res)
+  return Array.isArray(data) ? data : data.results
+}
+
+export interface NumeroDepotPayload {
+  moyen: string
+  numero: string
+  titulaire: string
+  actif?: boolean
+}
+
+export async function createNumeroDepot(p: NumeroDepotPayload): Promise<NumeroDepotGestion> {
+  const res = await authFetch(`${API_BASE}/api/v1/gestion/numeros-depot/`, {
+    method: 'POST',
+    body: JSON.stringify(p),
+  })
+  return handleResponse<NumeroDepotGestion>(res)
+}
+
+export async function updateNumeroDepot(
+  id: number,
+  p: Partial<NumeroDepotPayload>
+): Promise<NumeroDepotGestion> {
+  const res = await authFetch(`${API_BASE}/api/v1/gestion/numeros-depot/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(p),
+  })
+  return handleResponse<NumeroDepotGestion>(res)
 }
 
 /* ——— Helpers ——— */

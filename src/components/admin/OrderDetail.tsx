@@ -9,7 +9,6 @@ import {
   marquerDisponible,
   marquerRemis,
   annulerDecision,
-  updateNoteInterne,
   downloadCapture,
   formatPrice,
   formatDate,
@@ -24,18 +23,6 @@ import { useAutoRefresh } from '@/hooks/useAutoRefresh'
 import OperatorLogo from '@/components/OperatorLogo'
 
 const MOTIFS: Motif[] = ['CAPTURE_ILLISIBLE', 'MONTANT_INSUFFISANT', 'PAIEMENT_INTROUVABLE', 'DOUBLON', 'AUTRE']
-
-const ACTION_LABELS: Record<string, string> = {
-  SOUMETTRE: 'Commande reçue',
-  CREATION: 'Commande reçue',
-  VALIDER: 'Paiement validé',
-  REFUSER: 'Commande refusée',
-  DEMANDER_COMPLEMENT: 'Complément demandé',
-  RENVOYER_CAPTURE: 'Nouvelle capture reçue',
-  MARQUER_DISPONIBLE: 'Polos disponibles',
-  MARQUER_REMIS: 'Polos remis',
-  ANNULER_DECISION: 'Décision annulée',
-}
 
 const SAFE_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
 const EXTENSIONS: Record<string, string> = {
@@ -61,8 +48,6 @@ export default function OrderDetail({ id, onChanged }: Props) {
   const [modal, setModal] = useState<ModalKind | null>(null)
   const [motif, setMotif] = useState<Motif>('CAPTURE_ILLISIBLE')
   const [commentaire, setCommentaire] = useState('')
-  const [note, setNote] = useState('')
-  const [savingNote, setSavingNote] = useState(false)
   const [captureUrl, setCaptureUrl] = useState<string | null>(null)
   const [zoom, setZoom] = useState(false)
 
@@ -73,7 +58,6 @@ export default function OrderDetail({ id, onChanged }: Props) {
     try {
       const data = await fetchCommande(id)
       setOrder(data)
-      setNote(data.note_interne || '')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur')
     } finally {
@@ -85,15 +69,11 @@ export default function OrderDetail({ id, onChanged }: Props) {
     load()
   }, [load])
 
-  // Actualisation en arrière-plan : on ne touche pas à une note en cours d'écriture
-  // ni à une fenêtre de décision ouverte.
+  // Actualisation en arrière-plan, sauf pendant une action ou une fenêtre de décision ouverte
   useAutoRefresh(async () => {
     if (!order || acting || modal) return
     try {
-      const data = await fetchCommande(id)
-      const noteModifiee = note !== (order.note_interne || '')
-      setOrder(data)
-      if (!noteModifiee) setNote(data.note_interne || '')
+      setOrder(await fetchCommande(id))
     } catch {
       /* on garde l'affichage actuel */
     }
@@ -137,18 +117,6 @@ export default function OrderDetail({ id, onChanged }: Props) {
       setActionError(e instanceof Error ? e.message : 'Action impossible')
     } finally {
       setActing(false)
-    }
-  }
-
-  const saveNote = async () => {
-    if (!order) return
-    setSavingNote(true)
-    try {
-      setOrder(await updateNoteInterne(order.id, note))
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Erreur')
-    } finally {
-      setSavingNote(false)
     }
   }
 
@@ -333,48 +301,6 @@ export default function OrderDetail({ id, onChanged }: Props) {
               {order.motif && <b>{MOTIF_LABELS[order.motif] || order.motif}. </b>}
               {order.commentaire}
             </p>
-          </Block>
-        )}
-
-        {/* Note */}
-        <Block title="Note interne">
-          <textarea
-            className="input-field min-h-[80px] resize-y"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Visible seulement par l’équipe"
-          />
-          {note !== (order.note_interne || '') && (
-            <div className="mt-2 flex justify-end">
-              <button type="button" disabled={savingNote} onClick={saveNote} className="btn-secondary !py-2">
-                {savingNote ? 'Enregistrement…' : 'Enregistrer'}
-              </button>
-            </div>
-          )}
-        </Block>
-
-        {/* Historique */}
-        {order.evenements?.length > 0 && (
-          <Block title="Historique">
-            <ol className="space-y-3 text-sm">
-              {order.evenements.map((ev, i) => (
-                <li key={i} className="flex justify-between gap-4">
-                  <div>
-                    <p className="text-navy">
-                      {ACTION_LABELS[ev.action] ?? ev.action}
-                      {ev.auteur && <span className="text-slate-400"> · {ev.auteur}</span>}
-                    </p>
-                    {(ev.motif || ev.commentaire) && (
-                      <p className="text-slate-500">
-                        {ev.motif && `${MOTIF_LABELS[ev.motif] || ev.motif}. `}
-                        {ev.commentaire}
-                      </p>
-                    )}
-                  </div>
-                  <span className="shrink-0 text-slate-400">{formatDate(ev.date)}</span>
-                </li>
-              ))}
-            </ol>
           </Block>
         )}
       </div>

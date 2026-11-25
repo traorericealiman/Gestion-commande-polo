@@ -19,7 +19,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useAutoRefresh } from '@/hooks/useAutoRefresh'
 
 const PAR_PAGE = 10
-const FILTRES = ['', 'EN_ATTENTE', 'A_CORRIGER', 'VALIDEE', 'POLO_DISPONIBLE', 'REMIS', 'REFUSEE'] as const
+const FILTRES = ['', 'EN_ATTENTE', 'VALIDEE', 'POLO_DISPONIBLE', 'REMIS', 'REFUSEE'] as const
 
 interface Props {
   counters: Record<string, number>
@@ -170,10 +170,7 @@ export default function OrdersSection({ counters, onChanged }: Props) {
               <button
                 key={s || 'all'}
                 type="button"
-                onClick={() => {
-                  setStatut(s)
-                  setPage(1)
-                }}
+                onClick={() => setStatut(s)}
                 className={cn(
                   'shrink-0 border-b-2 pb-3 text-sm font-semibold transition',
                   active ? 'border-navy text-navy' : 'border-transparent text-slate-400 hover:text-slate-600'

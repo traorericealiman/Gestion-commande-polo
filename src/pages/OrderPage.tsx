@@ -486,10 +486,10 @@ export default function OrderPage() {
                       >
                         <ul className="divide-y divide-slate-100">
                           {depotNumbers.map((d) => (
-                            <li key={d.numero} className="flex items-center gap-4 px-5 py-4">
-                              <OperatorLogo moyen={moyen} className="h-11 w-11" />
+                            <li key={d.numero} className="flex items-center gap-3 px-3 py-4 sm:gap-4 sm:px-5">
+                              <OperatorLogo moyen={moyen} className="h-9 w-9 sm:h-11 sm:w-11" />
                               <div className="min-w-0 flex-1">
-                                <p className="text-lg font-semibold tracking-wide text-navy">
+                                <p className="whitespace-nowrap text-base font-semibold text-navy sm:text-lg sm:tracking-wide">
                                   {formatPhone(d.numero)}
                                 </p>
                                 <p className="truncate text-sm text-slate-500">{d.titulaire}</p>
@@ -708,7 +708,7 @@ function Panel({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-soft sm:p-8">
+    <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-soft sm:p-8">
       <h2 className="font-display text-xl font-bold text-navy sm:text-2xl">{title}</h2>
       {subtitle && <p className="mt-1.5 text-sm text-slate-500">{subtitle}</p>}
       <div className="mt-7">{children}</div>
@@ -1026,12 +1026,12 @@ function CopyButton({ value, label, dark }: { value: string; label: string; dark
         }
       }}
       className={cn(
-        'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition',
+        'inline-flex shrink-0 items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-semibold transition sm:px-3.5',
         dark ? 'bg-white/10 text-white hover:bg-white/20' : 'text-slate-500 hover:bg-slate-100 hover:text-navy'
       )}
     >
       {copied ? <Check className="h-4 w-4 text-lime" /> : <Copy className="h-4 w-4" />}
-      {label && (copied ? 'Copié' : label)}
+      {label && <span className="hidden sm:inline">{copied ? 'Copié' : label}</span>}
     </button>
   )
 }

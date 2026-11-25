@@ -242,7 +242,7 @@ export default function OrderPage() {
     <div className="pb-24">
       {/* En-tête */}
       <div className="border-b border-slate-200/70 bg-white">
-        <div className="mx-auto max-w-7xl px-4 pb-8 pt-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1440px] px-5 pb-8 pt-10 sm:px-8 lg:px-12">
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-navy sm:text-4xl">
             Commander
           </h1>

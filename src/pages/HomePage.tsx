@@ -6,6 +6,7 @@ import { useCatalogue } from '@/hooks/useCatalogue'
 import { getPrix } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { POLO_IMAGES } from '@/lib/polos'
+import OperatorLogo from '@/components/OperatorLogo'
 
 const nf = new Intl.NumberFormat('fr-FR')
 
@@ -50,27 +51,62 @@ export default function HomePage() {
   return (
     <div>
       {/* ——— Accueil ——— */}
-      <section className="mx-auto grid max-w-6xl gap-12 px-5 pb-20 pt-12 sm:px-8 lg:grid-cols-2 lg:items-center lg:pt-20">
+      <section className="mx-auto grid max-w-[1440px] gap-12 px-5 pb-20 pt-10 sm:px-8 lg:px-12 lg:min-h-[calc(100vh-72px)] lg:grid-cols-[1fr_1.15fr] lg:items-center lg:gap-16 lg:py-12">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <h1 className="font-display text-4xl font-extrabold leading-[1.1] tracking-tight text-navy sm:text-5xl">
+          <h1 className="font-display text-5xl font-extrabold leading-[1.05] tracking-tight text-navy sm:text-6xl xl:text-7xl">
             Le polo officiel
             <br />
-            de l’ESATIC.
+            de l’<span className="text-brand-600">ESATIC</span>.
           </h1>
-          <div className="mt-8 flex flex-wrap items-center gap-6">
-            <Link to="/commander" className="btn-dark !rounded-full !px-6 !py-3.5">
+
+          <div className="mt-10 flex flex-wrap items-center gap-6">
+            <Link to="/commander" className="btn-dark !rounded-full !px-7 !py-4 text-base">
               Commander
               <ArrowRight className="h-4 w-4" />
             </Link>
             {prix('SIMPLE', 'COURTES') !== null && (
-              <p className="text-sm text-slate-500">
+              <p className="text-slate-500">
                 À partir de <b className="text-navy">{nf.format(prix('SIMPLE', 'COURTES')!)} FCFA</b>
               </p>
             )}
+          </div>
+
+          {/* Les deux polos */}
+          <div className="mt-12 grid max-w-md grid-cols-2 gap-4">
+            {[
+              { img: POLO_IMAGES.LICENCE.COURTES, titre: 'Licence', couleur: 'Polo bleu' },
+              { img: POLO_IMAGES.MASTER.COURTES, titre: 'Master', couleur: 'Polo blanc' },
+            ].map((p) => (
+              <Link
+                key={p.titre}
+                to="/commander"
+                className="group flex items-center gap-3 rounded-2xl border border-slate-200 p-3 transition hover:border-slate-300 hover:shadow-soft"
+              >
+                <img
+                  src={p.img}
+                  alt={`${p.couleur} ${p.titre}`}
+                  className="h-14 w-14 shrink-0 rounded-xl bg-slate-50 object-contain p-1"
+                />
+                <div>
+                  <p className="font-display font-bold text-navy">{p.titre}</p>
+                  <p className="text-sm text-slate-500">{p.couleur}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          {/* Moyens de paiement */}
+          <div className="mt-8 flex items-center gap-4">
+            <p className="text-sm text-slate-500">Paiement</p>
+            <div className="flex gap-2">
+              {['WAVE', 'ORANGE_MONEY', 'MTN_MONEY', 'MOOV_MONEY'].map((m) => (
+                <OperatorLogo key={m} moyen={m} className="h-9 w-9 rounded-lg" />
+              ))}
+            </div>
           </div>
         </motion.div>
 
@@ -78,19 +114,26 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.1 }}
-          className="overflow-hidden rounded-3xl"
+          className="relative"
         >
+          <div className="overflow-hidden rounded-[2rem]">
+            <img
+              src="/images/campus/equipe.jpg"
+              alt="Étudiants de l’ESATIC en polo bleu et blanc"
+              className="aspect-[4/3] w-full object-cover lg:aspect-auto lg:h-[min(78vh,680px)]"
+            />
+          </div>
           <img
-            src="/images/campus/equipe.jpg"
-            alt="Étudiants de l’ESATIC en polo bleu et blanc"
-            className="aspect-[4/3] w-full object-cover"
+            src="/images/campus/dos-a2e.jpg"
+            alt="Logo A2E au dos des polos"
+            className="absolute -bottom-8 -left-8 hidden w-44 rounded-2xl border-[6px] border-white object-cover shadow-card xl:block"
           />
         </motion.div>
       </section>
 
       {/* ——— Les deux polos ——— */}
       <section className="bg-[#F6F8FB]">
-        <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
+        <div className="mx-auto max-w-[1440px] px-5 py-20 sm:px-8 lg:px-12">
           <motion.div {...reveal} className="max-w-xl">
             <h2 className="section-title">Deux polos, un par cycle</h2>
             <p className="mt-3 text-slate-600">
@@ -107,7 +150,7 @@ export default function HomePage() {
       </section>
 
       {/* ——— Tarifs ——— */}
-      <section className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
+      <section className="mx-auto max-w-[1440px] px-5 py-20 sm:px-8 lg:px-12">
         <motion.div {...reveal} className="grid gap-10 lg:grid-cols-[1fr_1.4fr] lg:items-start">
           <div>
             <h2 className="section-title">Tarifs</h2>
@@ -147,7 +190,7 @@ export default function HomePage() {
 
       {/* ——— Comment commander ——— */}
       <section className="border-t border-slate-100">
-        <div className="mx-auto grid max-w-6xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-2 lg:items-center">
+        <div className="mx-auto grid max-w-[1440px] gap-12 px-5 py-20 sm:px-8 lg:px-12 lg:grid-cols-2 lg:items-center">
           <motion.div {...reveal}>
             <h2 className="section-title">Comment commander</h2>
             <ol className="mt-8 space-y-7">

@@ -58,7 +58,7 @@ export default function Layout() {
           scrolled ? 'shadow-[0_1px_0_rgba(0,34,74,0.08)]' : ''
         )}
       >
-        <div className="mx-auto flex h-[72px] max-w-6xl items-center justify-between px-5 sm:px-8">
+        <div className="mx-auto flex h-[72px] max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
           <Link to="/" aria-label="Accueil">
             <Logo className="h-14" />
           </Link>
@@ -97,7 +97,7 @@ export default function Layout() {
       </main>
 
       <footer ref={footerRef} className="border-t border-slate-100">
-        <div className="mx-auto max-w-6xl px-5 py-8 text-center text-sm text-slate-500 sm:px-8">
+        <div className="mx-auto max-w-[1440px] px-5 py-8 text-center text-sm text-slate-500 sm:px-8 lg:px-12">
           <p>© {new Date().getFullYear()} Association Estudiantine de l’ESATIC</p>
         </div>
       </footer>

@@ -20,7 +20,7 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-white">
       <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/90 backdrop-blur-lg">
-        <div className="mx-auto flex h-[72px] max-w-6xl items-center justify-between px-5 sm:px-8">
+        <div className="mx-auto flex h-[72px] max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
           <Link to="/admin" aria-label="Tableau de bord">
             <Logo className="h-14" />
           </Link>
@@ -39,7 +39,7 @@ export default function AdminLayout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-5 pb-20 pt-10 sm:px-8">
+      <main className="mx-auto max-w-[1440px] px-5 pb-20 pt-10 sm:px-8 lg:px-12">
         <Outlet />
       </main>
     </div>

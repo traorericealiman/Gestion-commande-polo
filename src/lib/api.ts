@@ -37,26 +37,55 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_KEY)
 }
 
+/** Erreur renvoyée par l'API, avec le code et les erreurs par champ quand il y en a. */
+export class ApiError extends Error {
+  status: number
+  code?: string
+  erreurs: Record<string, string>
+
+  constructor(message: string, status: number, code?: string, erreurs: Record<string, string> = {}) {
+    super(message)
+    this.status = status
+    this.code = code
+    this.erreurs = erreurs
+  }
+}
+
+/** { champ: ["msg"] } ou { champ: "msg" } → { champ: "msg" } */
+function premiersMessages(obj: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (obj && typeof obj === 'object') {
+    Object.entries(obj as Record<string, unknown>).forEach(([k, v]) => {
+      if (Array.isArray(v) && v.length) out[k] = String(v[0])
+      else if (typeof v === 'string') out[k] = v
+    })
+  }
+  return out
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = 'Une erreur est survenue'
+    let code: string | undefined
+    let erreurs: Record<string, string> = {}
     try {
       const body = await res.json()
       if (typeof body === 'object' && body !== null) {
-        if (body.detail)
-          detail =
-            typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+        code = typeof body.code === 'string' ? body.code : undefined
+        // Format de l'API : { detail, code, erreurs: { champ: [...] } } ; sinon format DRF classique
+        erreurs = body.erreurs
+          ? premiersMessages(body.erreurs)
+          : body.detail
+            ? {}
+            : premiersMessages(body)
+        if (typeof body.detail === 'string') detail = body.detail
         else if (body.non_field_errors) detail = body.non_field_errors.join(' ')
-        else {
-          const first = Object.values(body)[0]
-          if (Array.isArray(first)) detail = String(first[0])
-          else if (typeof first === 'string') detail = first
-        }
+        else if (Object.values(erreurs)[0]) detail = Object.values(erreurs)[0]
       }
     } catch {
       /* ignore */
     }
-    throw new Error(detail)
+    throw new ApiError(detail, res.status, code, erreurs)
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -85,8 +114,21 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
     }
     if (res.status === 401) expireSession()
   }
+  // Mot de passe provisoire pas encore changé : la gestion reste fermée
+  if (res.status === 403) {
+    try {
+      const body = await res.clone().json()
+      if (body?.code === 'mot_de_passe_a_changer') {
+        window.dispatchEvent(new Event(PASSWORD_CHANGE_EVENT))
+      }
+    } catch {
+      /* corps illisible : on laisse l'erreur suivre son cours */
+    }
+  }
   return res
 }
+
+export const PASSWORD_CHANGE_EVENT = 'a2e:mot-de-passe-a-changer'
 
 /** Session expirée : on efface les jetons et on prévient l'application (retour à la connexion). */
 export const AUTH_EXPIRED_EVENT = 'a2e:auth-expired'
@@ -167,7 +209,10 @@ export async function resendCapture(
 
 /* ——— Auth ——— */
 
-export async function login(email: string, password: string): Promise<AuthTokens> {
+export async function login(
+  email: string,
+  password: string
+): Promise<AuthTokens & { doit_changer_mot_de_passe?: boolean }> {
   const res = await fetch(`${API_BASE}/api/v1/auth/connexion/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -199,6 +244,19 @@ export async function logout(): Promise<void> {
   } finally {
     clearTokens()
   }
+}
+
+/**
+ * Change le mot de passe de la personne connectée.
+ * L'API ferme les autres sessions et renvoie de nouveaux jetons, qu'on enregistre.
+ */
+export async function changerMotDePasse(ancien: string, nouveau: string): Promise<void> {
+  const res = await authFetch(`${API_BASE}/api/v1/auth/mot-de-passe/changer/`, {
+    method: 'POST',
+    body: JSON.stringify({ ancien_mot_de_passe: ancien, nouveau_mot_de_passe: nouveau }),
+  })
+  const jetons = await handleResponse<AuthTokens>(res)
+  setTokens(jetons)
 }
 
 export async function fetchMe(): Promise<User> {

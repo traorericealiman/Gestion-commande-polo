@@ -141,6 +141,8 @@ export interface User {
   last_name: string
   role: Role
   last_login: string | null
+  /** Vrai à la première connexion : il faut choisir un nouveau mot de passe */
+  doit_changer_mot_de_passe?: boolean
 }
 
 export interface AuthTokens {

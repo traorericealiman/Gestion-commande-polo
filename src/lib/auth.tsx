@@ -14,7 +14,9 @@ import {
   getAccessToken,
   setTokens,
   clearTokens,
+  changerMotDePasse,
   AUTH_EXPIRED_EVENT,
+  PASSWORD_CHANGE_EVENT,
 } from './api'
 import type { User } from '@/types'
 
@@ -23,6 +25,7 @@ interface AuthContextValue {
   loading: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  changePassword: (ancien: string, nouveau: string) => Promise<void>
   isAdmin: boolean
 }
 
@@ -60,11 +63,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
   }, [])
 
+  // L'API refuse la gestion tant que le mot de passe provisoire n'est pas changé
+  useEffect(() => {
+    const onMustChange = () =>
+      setUser((u) => (u ? { ...u, doit_changer_mot_de_passe: true } : u))
+    window.addEventListener(PASSWORD_CHANGE_EVENT, onMustChange)
+    return () => window.removeEventListener(PASSWORD_CHANGE_EVENT, onMustChange)
+  }, [])
+
   const login = useCallback(async (email: string, password: string) => {
     const tokens = await apiLogin(email, password)
     setTokens(tokens)
     const me = await fetchMe()
-    setUser(me)
+    setUser({
+      ...me,
+      doit_changer_mot_de_passe: Boolean(me.doit_changer_mot_de_passe || tokens.doit_changer_mot_de_passe),
+    })
+  }, [])
+
+  const changePassword = useCallback(async (ancien: string, nouveau: string) => {
+    await changerMotDePasse(ancien, nouveau)
+    const me = await fetchMe()
+    setUser({ ...me, doit_changer_mot_de_passe: false })
   }, [])
 
   const logout = useCallback(async () => {
@@ -78,9 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       login,
       logout,
+      changePassword,
       isAdmin: user?.role === 'ADMIN',
     }),
-    [user, loading, login, logout]
+    [user, loading, login, logout, changePassword]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

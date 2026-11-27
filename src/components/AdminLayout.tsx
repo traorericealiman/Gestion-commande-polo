@@ -2,6 +2,7 @@ import { Outlet, Navigate, Link } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import Logo from './Logo'
 import { useScrollMemory } from '@/hooks/useScrollMemory'
+import ChangePasswordPage from '@/pages/admin/ChangePasswordPage'
 
 export default function AdminLayout() {
   const { user, loading, logout } = useAuth()
@@ -17,6 +18,9 @@ export default function AdminLayout() {
 
   if (!user) return <Navigate to="/admin/login" replace />
 
+  // Mot de passe provisoire : la gestion reste fermée tant qu'il n'est pas changé
+  if (user.doit_changer_mot_de_passe) return <ChangePasswordPage obligatoire />
+
   return (
     <div className="min-h-screen bg-white">
       <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/90 backdrop-blur-lg">
@@ -28,6 +32,9 @@ export default function AdminLayout() {
             <span className="hidden text-slate-500 sm:inline">
               {user.first_name} {user.last_name}
             </span>
+            <Link to="/admin/mot-de-passe" className="font-semibold text-slate-500 hover:text-navy">
+              Mot de passe
+            </Link>
             <button
               type="button"
               onClick={() => logout()}

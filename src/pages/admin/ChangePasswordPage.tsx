@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Loader2, Eye, EyeOff, Check } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Check, ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -156,15 +156,29 @@ export default function ChangePasswordPage({ obligatoire = false }: Props) {
     </>
   )
 
-  // Depuis le tableau de bord : simple carte au centre de la page
+  // Depuis le tableau de bord : carte avec photo d'un côté et formulaire de l'autre
   if (!obligatoire) {
     return (
-      <div className="mx-auto max-w-sm py-6">
-        <Link to="/admin" className="text-sm font-semibold text-slate-500 hover:text-navy">
-          ← Retour
+      <div className="mx-auto max-w-5xl">
+        <Link
+          to="/admin"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-navy"
+        >
+          <ArrowLeft className="h-4 w-4" /> Tableau de bord
         </Link>
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
-          {formulaire}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-6 grid overflow-hidden rounded-3xl border border-slate-200 shadow-soft md:grid-cols-2"
+        >
+          <div className="relative h-48 md:h-auto">
+            <img
+              src="/images/campus/accord.jpg"
+              alt="Deux étudiants de l’ESATIC en polo"
+              className="absolute inset-0 h-full w-full object-cover object-[35%_center]"
+            />
+          </div>
+          <div className="px-6 py-10 sm:px-10">{formulaire}</div>
         </motion.div>
       </div>
     )
